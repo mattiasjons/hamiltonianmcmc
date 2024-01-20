@@ -1,0 +1,13 @@
+Package: hamiltonianmcmc
+Type: Package
+Title: Hamiltonian MCMC
+Version: 0.1.0
+Authors@R: 
+    person("Mattias", "Jönsson", , "mattias.jonsson@stat.lu.se", role = c("aut", "cre"))
+Description: Basic, native R implementation of hamiltonian MCMC.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Imports:
+    MASS
+RoxygenNote: 7.2.3
