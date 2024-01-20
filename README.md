@@ -11,6 +11,9 @@ devtools::install_github("mattiasjons/hamiltonianmcmc", upgrade_dependencies = F
 ```
 
 # How to use
+
+A simple example for how to use the code follows below:
+
 ```r
 # Function to calculate the negative log likelihood (up to a constant)
 negative_log_likelihood <- function(x, mean, covariance) {
