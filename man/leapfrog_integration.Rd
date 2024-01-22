@@ -2,7 +2,7 @@
 % Please edit documentation in R/hmc.R
 \name{leapfrog_integration}
 \alias{leapfrog_integration}
-\title{Leapfrog integrator}
+\title{Hamiltonian Markov Chain Monte Carlo sampler.}
 \usage{
 leapfrog_integration(
   current_state,
@@ -27,5 +27,8 @@ leapfrog_integration(
 A list of proposed state and proposed momentum
 }
 \description{
+`hamiltonian_mcmc()` is the main function of this library, that provides a simple way to run a Hamiltonian MCMC sampler for given density and gradient functions.
+
+At the moment, no vignette exists.
 Leapfrog integrator
 }
