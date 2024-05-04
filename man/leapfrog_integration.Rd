@@ -8,7 +8,7 @@ leapfrog_integration(
   current_state,
   momentum,
   step_size,
-  gradient_function,
+  tgt_density,
   num_steps
 )
 }
@@ -19,12 +19,12 @@ leapfrog_integration(
 
 \item{step_size}{A number.}
 
-\item{gradient_function}{A number.}
-
 \item{num_steps}{A number.}
+
+\item{gradient_function}{A number.}
 }
 \value{
-A list of proposed state and proposed momentum
+A list of proposed state, proposed momentum and final gradient
 }
 \description{
 `hamiltonian_mcmc()` is the main function of this library, that provides a simple way to run a Hamiltonian MCMC sampler for given density and gradient functions.

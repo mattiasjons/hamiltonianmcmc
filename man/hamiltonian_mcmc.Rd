@@ -9,8 +9,7 @@ hamiltonian_mcmc(
   num_samples,
   step_size,
   num_steps,
-  density_function,
-  gradient_function,
+  tgt_density,
   M,
   adaptive_mode = FALSE,
   adaptive_target_acceptance = 0.85
@@ -25,9 +24,7 @@ hamiltonian_mcmc(
 
 \item{num_steps}{Number of leap frog steps. If Adaptive Mode is enabled, this represents the initial value.}
 
-\item{density_function}{A function representing the target density to sample from. The function should take a single vector valued parameter of length \eqn{d}.}
-
-\item{gradient_function}{A function representing the gradient of the density function. The function should take a single vector valued parameter of length \eqn{d}.}
+\item{tgt_density}{An object of class TargetDensity representing the target density to sample from.}
 
 \item{M}{The mass matrix for sampling momenta. Can be passed as either a full \eqn{d \times d} matrix or as a vector of length \eqn{d}, interpreted as the diagnoal of the mass matrix}
 
@@ -36,49 +33,40 @@ hamiltonian_mcmc(
 \item{adaptive_target_acceptance}{If adaptive mode is enabled, this sets the target acceptance rate. Default = \eqn{0.85}}
 }
 \value{
-Returns a matrix of samples.
+A list of the following
+\itemize{
+  \item samples: A matrix of accepted samples. Each non accepted iteration will have NA entries.
+  \item proposals: A matrix of all proposals, no matter if they were accepted or not. Used primarily for diagnostics.
+  \item energy: A matrix with two columns. Column1 is the total hamiltonian for the state at each iteration, Column2 is the hamiltonian for the proposal generated in each iteration.
+  \item metropolis_acceptance: A matrix with a single column, containing the metropolis acceptance (i.e. random $U(0,1)$) generated at each iteration.
+}
 }
 \description{
 Sample using hamiltonian MCMC
 }
 \examples{
-# Function to calculate the negative log likelihood (up to a constant)
-negative_log_likelihood <- function(x, mean, covariance) {
- k <- length(mean)
- det_cov <- det(covariance)
- stopifnot("Covariance matrix must be positive definite."= det_cov > 0)
+library(hamiltonianmcmc)
+library(torch)
+library(MASS)
 
- constant <- -0.5 * (k * log(2 * pi) + log(det_cov))
- exponent <- 0.5 * t(x - mean) \%*\% solve(covariance) \%*\% (x - mean)
- log_likelihood <- constant + exponent
+d = 3
+rho <- runif(3)
+sigma <- c(3, 2, 1)
+df <- mvrnorm(100, rep(0, d), t(rho\%*\%diag(sigma))\%*\%t(rho))
 
- return(log_likelihood)
-}
+tgt_dens <- hamiltonianmcmc::TargetDensity$new(data = torch_tensor(df),
+                                               init_mu = rnorm(d),
+                                               diag(d))
 
-# Function to calculate the gradient of the negative log likelihood
-gradient_negative_log_likelihood <- function(x, mean, covariance) {
- k <- length(mean)
- det_cov <- det(covariance)
- stopifnot("Covariance matrix must be positive definite."= det_cov > 0)
-
- gradient <- -solve(covariance) \%*\% (x - mean)
-
- return(gradient)
-}
-
-set.seed(123)
-mean_vector <- c(2, -2)
-covariance_matrix <- matrix(c(1, 0.98, 0.98, 2), nrow = 2, ncol = 2)
-num_samples <- 1000
-initial_state <- c(0, 0)
-step_size <- 0.05
+num_samples <- 1500
+initial_state <- rnorm(d)
+step_size <- 0.0005
 num_steps <- 30
-# Define the multivariate normal density and gradient functions
-density_function <- function(x) -negative_log_likelihood(x, mean_vector, covariance_matrix)
-gradient_function <- function(x) -gradient_negative_log_likelihood(x, mean_vector, covariance_matrix)
-samples <- hamiltonian_mcmc(initial_state, num_samples,
-                           step_size, num_steps,
-                           density_function, gradient_function,
-                           M=c(1, 1))
-plot(samples[,1])
+
+hmc_res <- hamiltonian_mcmc(initial_state = initial_state, num_samples = num_samples,
+                            step_size = step_size, num_steps = num_steps,
+                            tgt_density = tgt_dens, M=rep(0.01, d),
+                            adaptive_mode = T, adaptive_target_acceptance = 0.8)
+
+plot(hmc_res$samples[100:1500,])
 }
