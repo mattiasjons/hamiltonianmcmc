@@ -20,8 +20,8 @@ library(torch)
 library(MASS)
 
 d = 3
-rho <- runif(3)
-sigma <- c(3, 2, 1)
+rho <- runif(d)
+sigma <- d:1
 df <- mvrnorm(100, rep(0, d), t(rho%*%diag(sigma))%*%t(rho))
 
 tgt_dens <- hamiltonianmcmc::TargetDensity$new(data = torch_tensor(df),
