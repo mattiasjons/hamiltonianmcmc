@@ -111,9 +111,9 @@ hamiltonian_mcmc <- function(initial_state,
     proposed_momentum <- leapfrog_result$proposed_momentum
 
     # Metropolis acceptance step
-    current_energy <- -as.numeric(tgt_density$value(current_state)) + 0.5 * sum(momentum^2)
+    current_energy <- -as.numeric(tgt_density$value(current_state)) + 0.5 * t(momentum) %*% M %*% momentum
     energy[i,1] <- current_energy
-    proposed_energy <- -as.numeric(tgt_density$value(proposed_state)) + 0.5 * sum(proposed_momentum^2)
+    proposed_energy <- -as.numeric(tgt_density$value(proposed_state)) + 0.5 * t(momentum) %*% M %*% momentum
     energy[i,2] <- proposed_energy
 
     acceptance_ratio <- exp(current_energy - proposed_energy)
