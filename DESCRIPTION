@@ -10,5 +10,6 @@ Encoding: UTF-8
 LazyData: true
 Imports:
     MASS,
-    R6
+    R6,
+    incrementalpca
 RoxygenNote: 7.2.3
