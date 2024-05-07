@@ -41,6 +41,8 @@ leapfrog_integration <- function(current_state, momentum, step_size, tgt_density
 #' @param step_size How large is the step size in the leapfrof integration.
 #' @param num_steps Number of leap frog steps. If Adaptive Mode is enabled, this represents the initial value.
 #' @param tgt_density An object of class TargetDensity representing the target density to sample from.
+#' @param auto_mass_matrix A boolean indicating wether the Mass matrix should be adjusted dynamically based on accepted posterior samples
+#' @param n_mass_matrix_comp If the mass matrix is dynamically adapted, it is done so using a eigendecomposition. This parameter sets the number of components for the decomposition.
 #' @param M The mass matrix for sampling momenta. Can be passed as either a full \eqn{d \times d} matrix or as a vector of length \eqn{d}, interpreted as the diagnoal of the mass matrix
 #' @param adaptive_mode Boolean to indicate whether the step size should be dynamic based on a target acceptance rate. FALSE by default.
 #' @param adaptive_target_acceptance If adaptive mode is enabled, this sets the target acceptance rate. Default = \eqn{0.85}
@@ -73,7 +75,8 @@ leapfrog_integration <- function(current_state, momentum, step_size, tgt_density
 #'
 #' hmc_res <- hamiltonian_mcmc(initial_state = initial_state, num_samples = num_samples,
 #'                             step_size = step_size, num_steps = num_steps,
-#'                             tgt_density = tgt_dens, M=rep(0.01, d),
+#'                             tgt_density = tgt_dens, auto_mass_matrix = F,
+#'                             n_mass_matrix_comp = 1, M=rep(0.01, d),
 #'                             adaptive_mode = T, adaptive_target_acceptance = 0.8)
 #'
 #' plot(hmc_res$samples[100:1500,])
