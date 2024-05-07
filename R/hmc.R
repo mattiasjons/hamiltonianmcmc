@@ -82,13 +82,23 @@ hamiltonian_mcmc <- function(initial_state,
                              step_size,
                              num_steps,
                              tgt_density,
+                             auto_mass_matrix,
+                             n_mass_matrix_comp,
                              M,
                              adaptive_mode = FALSE,
                              adaptive_target_acceptance = 0.85) {
   #TODO: Asserts
 
+  if(is.null(M)) {
+    M <- rep(1, length(initial_state))
+  }
+
   if (length(M)==length(initial_state) & length(M)>1) {
     M = diag(M)
+  }
+
+  if (auto_mass_matrix) {
+    library(incrementalpca)
   }
 
   current_state <- initial_state
@@ -96,11 +106,28 @@ hamiltonian_mcmc <- function(initial_state,
   proposals <- matrix(nrow=num_samples, ncol = length(initial_state))
   energy <- matrix(nrow = num_samples, ncol=2)
   metropolis_acceptance = matrix(nrow = num_samples, ncol=1)
+  init_done <- F
+  n_accepted <- 0
+  last_updated_mass_step <- 0
 
   for (i in 1:num_samples) {
     if (i%%50==0) {
       cat(paste0('Generated ', i, ' samples.'))
       cat('\r\n')
+    }
+
+    if (auto_mass_matrix){
+      if (!init_done && n_accepted > n_mass_matrix_comp) {
+        M_decomp <- IncrementalDecomposition$new(samples[!is.na(samples[,1]),], n_mass_matrix_comp)
+        init_done <- T
+        last_updated_mass_step <- i
+        M <- M_decomp$get_precision()
+      } else if (init_done && i >= last_updated_mass_step + 5) {
+        smp <- samples[(i-4):i,]
+        M_decomp$partial_fit(smp, 0.98)
+        last_updated_mass_step <- i
+        M <- M_decomp$get_precision()
+      }
     }
 
     momentum <- MASS::mvrnorm(1, mu = rep(0, length(current_state)), Sigma = M)
@@ -123,6 +150,7 @@ hamiltonian_mcmc <- function(initial_state,
     if (metropolis_acceptance[i, 1] < acceptance_ratio) {
       current_state <- proposed_state
       samples[i,] <- current_state
+      n_accepted <- n_accepted + 1
     }
 
     if (adaptive_mode) {
@@ -139,4 +167,3 @@ hamiltonian_mcmc <- function(initial_state,
               energy = energy,
               metropolis_acceptance=metropolis_acceptance))
 }
-

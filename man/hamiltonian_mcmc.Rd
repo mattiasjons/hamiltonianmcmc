@@ -10,6 +10,8 @@ hamiltonian_mcmc(
   step_size,
   num_steps,
   tgt_density,
+  auto_mass_matrix,
+  n_mass_matrix_comp,
   M,
   adaptive_mode = FALSE,
   adaptive_target_acceptance = 0.85
