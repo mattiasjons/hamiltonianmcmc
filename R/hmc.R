@@ -311,11 +311,11 @@ hamiltonian_mcmc <- function(initial_state,
 
         if(metric_method=='ccipca'){
           if (!init_done && i > 1) {
-            pca <- princomp(cov(samples[!is.na(samples[,1]),]))
-            xbar <- pca$center
+            pca <- eigen(cov(samples[!is.na(samples[,1]),]))
+            xbar <- colMeans(samples[!is.na(samples[,1]),])
 
-            pca <- list(values=pca$sdev^2,
-                        vectors=pca$loadings)
+            #pca <- list(values=pca$sdev^2,
+            #            vectors=pca$loadings)
 
             init_done <- T
             last_updated_mass_step <- i

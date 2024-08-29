@@ -36,11 +36,14 @@ data_list <- list(N = nrow(X),
                   y = y,
                   X = X[,order(sapply(1:ncol(X), function(i) cor(y, X[,i])), decreasing = T)[1:k]])
 
-hmc_res <- hamiltonian_mcmc(rep(0, k), 500, 0.02, 20, stan_file = file, stan_data = data_list, metric = diag(k),
+library(glmnet) #Let's "cheat" to find good starting values.
+
+hmc_res <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 1)))[-1],
+                            500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),
                             metric_method = 'ccipca', adaptive_stepsize = T)
 
-mcmc_intervals(hmc_res$samples[200:500,])
-mcmc_trace(hmc_res$samples[100:500,31:60])
+mcmc_intervals(hmc_res$samples[300:500,])
+mcmc_trace(hmc_res$samples[200:500,1:30])
 plot(log(hmc_res$step_sizes))
 
 plot(y, data_list$X %*% colMeans(hmc_res$samples[200:500,]))
