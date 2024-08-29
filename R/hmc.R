@@ -12,26 +12,124 @@
 #' @param current_state A number.
 #' @param momentum A number.
 #' @param step_size A number.
-#' @param gradient_function A number.
+#' @param stan_obj A number.
 #' @param num_steps A number.
 #' @export
 #' @returns A list of proposed state, proposed momentum and final gradient
-leapfrog_integration <- function(current_state, momentum, step_size, tgt_density, num_steps) {
+leapfrog_integration <- function(current_state, momentum,
+                                 step_size, stan_obj,
+                                 num_steps, returndetails=F, M) {
 
-  proposed_state <- current_state
-  proposed_momentum <- momentum - 0.5 * step_size * as.numeric(tgt_density$grad(current_state)[[1]])
+  states = vector("list", num_steps + 1)
+  momenta = vector("list", num_steps + 2)
+
+  proposed_momentum <- momentum + 0.5 * c(step_size) * as.numeric(stan_obj$grad_log_prob(current_state))
+  proposed_state <- current_state + c(step_size) * M %*% proposed_momentum
+
+  states[[1]] <- c(current_state)
+  momenta[[1]] <- c(proposed_momentum)
 
   for (j in 1:num_steps) {
-    proposed_state <- proposed_state - step_size * proposed_momentum
-    proposed_momentum <- proposed_momentum - step_size * as.numeric(tgt_density$grad(proposed_state)[[1]])
+    if(any(is.na(proposed_state)) | any(is.na(proposed_momentum))) {
+      return(list(diverge = T))
+    }
+    proposed_momentum <- proposed_momentum + c(step_size) * as.numeric(stan_obj$grad_log_prob(proposed_state))
+    proposed_state <- proposed_state + c(step_size) * M %*% proposed_momentum
+
+    states[[j + 1]] <- c(proposed_state)
+    momenta[[j + 1]] <- c(proposed_momentum)
   }
 
-  final_grad <- as.numeric(tgt_density$grad(proposed_state)[[1]])
-  proposed_momentum <- proposed_momentum - 0.5 * step_size * final_grad
+  final_grad <- as.numeric(stan_obj$grad_log_prob(proposed_state))
+  proposed_momentum <- proposed_momentum + 0.5 * c(step_size) * final_grad
+  momenta[[num_steps + 2]] <- c(proposed_momentum)
 
-  return(list(proposed_state = proposed_state, proposed_momentum = proposed_momentum,
-              gradient = final_grad))
+  return(list(diverge = F, proposed_state = proposed_state, proposed_momentum = proposed_momentum,
+              gradient = final_grad, states = states, momenta = momenta))
 }
+
+
+calculate_ess <- function(samples) {
+  n <- length(samples)
+
+  autocorrelation <- calculate_autocorrelation_fft(samples)
+
+  sum_autocorr <- 0
+  for (k in 1:(n - 1)) {
+    if (autocorrelation[k + 1] < 0) {
+      break
+    }
+    sum_autocorr <- sum_autocorr + autocorrelation[k + 1]
+  }
+
+  ess <- n / (1 + 2 * sum_autocorr)
+
+  return(ess)
+}
+
+calculate_autocorrelation_fft <- function(x) {
+  n <- length(x)
+
+  # Subtract the mean
+  x_centered <- x - mean(x)
+
+  # FFT of the time series
+  fft_x <- fft(x_centered)
+
+  # Compute the power spectrum
+  power_spectrum <- fft_x * Conj(fft_x)
+
+  # Inverse FFT to get the autocovariance function
+  autocovariance <- Re(fft(power_spectrum, inverse = TRUE) / n)
+
+  # Normalize by the variance to get the autocorrelation function
+  autocorrelation <- autocovariance / autocovariance[1]
+
+  # Return the autocorrelation function
+  return(autocorrelation)
+}
+
+
+adapt_epsilon <- function(accept_prob, adapt_epsilon_counter,
+                          h_bar, target_accept_prob,
+                          mu, gamma, kappa, t0,
+                          log_epsilon_bar, epsilon) {
+
+  # Ensure accept_prob does not exceed 1
+  if (accept_prob > 1) {
+    accept_prob <- 1.0
+  }
+
+  # Increment the adaptation counter
+  adapt_epsilon_counter <- adapt_epsilon_counter + 1
+  counter <- adapt_epsilon_counter
+
+  # Calculate eta
+  eta <- 1.0 / (counter + t0)
+
+  # Update h_bar
+  h_bar <- (1 - eta) * h_bar + eta * (target_accept_prob - accept_prob)
+
+  # Calculate log_epsilon
+  log_epsilon <- mu - (sqrt(counter) / gamma) * h_bar
+
+  # Calculate x_eta
+  x_eta <- counter^(-kappa)
+
+  # Update log_epsilon_bar
+  log_epsilon_bar <- x_eta * log_epsilon + (1 - x_eta) * log_epsilon_bar
+
+  # Update epsilon
+  epsilon <- exp(log_epsilon)
+
+  return(list(
+    epsilon = epsilon,
+    h_bar = h_bar,
+    log_epsilon_bar = log_epsilon_bar,
+    adapt_epsilon_counter = adapt_epsilon_counter
+  ))
+}
+
 
 
 #' Sample using hamiltonian MCMC
@@ -40,7 +138,7 @@ leapfrog_integration <- function(current_state, momentum, step_size, tgt_density
 #' @param num_samples Number of samples to generate.
 #' @param step_size How large is the step size in the leapfrof integration.
 #' @param num_steps Number of leap frog steps. If Adaptive Mode is enabled, this represents the initial value.
-#' @param tgt_density An object of class TargetDensity representing the target density to sample from.
+#' @param stan_obj An object of class TargetDensity representing the target density to sample from.
 #' @param auto_mass_matrix A boolean indicating wether the Mass matrix should be adjusted dynamically based on accepted posterior samples
 #' @param n_mass_matrix_comp If the mass matrix is dynamically adapted, it is done so using a eigendecomposition. This parameter sets the number of components for the decomposition.
 #' @param M The mass matrix for sampling momenta. Can be passed as either a full \eqn{d \times d} matrix or as a vector of length \eqn{d}, interpreted as the diagnoal of the mass matrix
@@ -84,89 +182,218 @@ hamiltonian_mcmc <- function(initial_state,
                              num_samples,
                              step_size,
                              num_steps,
-                             tgt_density,
-                             auto_mass_matrix,
-                             n_mass_matrix_comp,
-                             M,
-                             adaptive_mode = FALSE,
-                             adaptive_target_acceptance = 0.85) {
+                             stan_file,
+                             stan_data,
+                             metric_method='ccipca',
+                             metric = diag(length(initial_state)),
+                             adaptive_stepsize = TRUE,
+                             adaptive_stepsize_target_acceptance = 0.65,
+                             returnleapfrogdetails = F,
+                             epsilon = 1e-2) {
   #TODO: Asserts
 
-  if(is.null(M)) {
-    M <- rep(1, length(initial_state))
+  library(cmdstanr)
+  require(posterior)
+
+  file <- file.path(stan_file)
+  mod <- cmdstan_model(file, compile = F)
+  mod$compile(compile_model_methods=TRUE, force_recompile=T)
+
+  fit <- mod$sample(
+    iter_warmup = 1,
+    iter_sampling = 1,
+    data = stan_data,
+    #adapt_delta = 0.99,
+    seed = 123,
+    chains = 4,
+    parallel_chains = 4, max_treedepth = 14,
+    refresh = 0,
+    save_warmup = 1,
+    metric='dense_e',
+    save_metric = T,
+    show_messages = F,
+    show_exceptions = F,
+    diagnostics = ''
+  )
+
+  cat('Model compiled and prepared\r\n')
+
+  if(is.null(metric)) {
+    metric <- rep(1, length(initial_state))
   }
 
-  if (length(M)==length(initial_state) & length(M)>1) {
-    M = diag(M)
+  if (length(metric)==length(initial_state) & length(metric)>1) {
+    metric = diag(metric)
   }
 
-  if (auto_mass_matrix) {
-    library(incrementalpca)
+  metric_inv <- MASS::ginv(metric)
+
+  if (metric_method =='ccipca') {
+    library(onlinePCA)
   }
 
   current_state <- initial_state
   samples <- matrix(nrow = num_samples, ncol = length(initial_state))
-  proposals <- matrix(nrow=num_samples, ncol = length(initial_state))
+  rejected <- matrix(nrow = 100 * num_samples, ncol = length(initial_state)) #TODO: Make this more efficient...
   energy <- matrix(nrow = num_samples, ncol=2)
+  leapfrogmomenta <- list()
+  leapfrogstates <- list()
   metropolis_acceptance = matrix(nrow = num_samples, ncol=1)
+  step_sizes = matrix(nrow = num_samples, ncol=1)
+  mass_matrices <- list()
   init_done <- F
   n_accepted <- 0
   last_updated_mass_step <- 0
 
-  for (i in 1:num_samples) {
+  adapter <- SimpleAveragingAdaptation$new(target_accept_prob = adaptive_stepsize_target_acceptance,
+                                         init_epsilon = step_size)
+  #adapter <- DualAveragingAdaptation$new(2000, 0.65, step_size, diag(length(initial_state)))
+
+  i = 1
+  n_rejected = 1
+
+  while (i <= num_samples) {
     if (i%%50==0) {
       cat(paste0('Generated ', i, ' samples.'))
       cat('\r\n')
     }
 
-    if (auto_mass_matrix){
-      if (!init_done && n_accepted > n_mass_matrix_comp) {
-        M_decomp <- IncrementalDecomposition$new(samples[!is.na(samples[,1]),], n_mass_matrix_comp)
-        init_done <- T
-        last_updated_mass_step <- i
-        M <- M_decomp$get_precision()
-      } else if (init_done && i >= last_updated_mass_step + 5) {
-        smp <- samples[(i-4):i,]
-        M_decomp$partial_fit(smp, 0.98)
-        last_updated_mass_step <- i
-        M <- M_decomp$get_precision()
-      }
-    }
+    accepted = F
+    n_inner_iter = 0
+    while(!accepted) {
+      n_inner_iter = n_inner_iter + 1
+      momentum <- MASS::mvrnorm(1, mu = rep(0, length(current_state)), Sigma = metric)
 
-    momentum <- MASS::mvrnorm(1, mu = rep(0, length(current_state)), Sigma = M)
-
-    # Leapfrog integration
-    leapfrog_result <- leapfrog_integration(current_state, momentum, step_size, tgt_density, num_steps)
-    proposed_state <- leapfrog_result$proposed_state
-    proposed_momentum <- leapfrog_result$proposed_momentum
-
-    # Metropolis acceptance step
-    current_energy <- -as.numeric(tgt_density$value(current_state)) + 0.5 * t(momentum) %*% M %*% momentum
-    energy[i,1] <- current_energy
-    proposed_energy <- -as.numeric(tgt_density$value(proposed_state)) + 0.5 * t(momentum) %*% M %*% momentum
-    energy[i,2] <- proposed_energy
-
-    acceptance_ratio <- exp(current_energy - proposed_energy)
-    metropolis_acceptance[i,1] <- stats::runif(1)
-    proposals[i,] <- proposed_state
-
-    if (metropolis_acceptance[i, 1] < acceptance_ratio) {
-      current_state <- proposed_state
-      samples[i,] <- current_state
-      n_accepted <- n_accepted + 1
-    }
-
-    if (adaptive_mode) {
-      if (acceptance_ratio > adaptive_target_acceptance) {
-        step_size = step_size * 1.2
+      # Leapfrog integration
+      leapfrog_result <- leapfrog_integration(current_state, momentum, adapter$get_epsilon(), fit, num_steps, returnleapfrogdetails, metric_inv)
+      if (leapfrog_result$diverge) {
+        proposed_state <- NA
+        proposed_momentum <- NA
       } else {
-        step_size = step_size * 1/1.2
+        proposed_state <- leapfrog_result$proposed_state
+        proposed_momentum <- leapfrog_result$proposed_momentum
+      }
+
+      # Metropolis acceptance step
+      if(any(is.na(proposed_state)) | any(is.na(proposed_momentum))) {
+        current_energy <- -as.numeric(fit$log_prob(current_state)) + 0.5 * t(momentum) %*% metric_inv %*% momentum
+        proposed_energy <- NA
+        acceptance_ratio <- 0
+      } else {
+        current_energy <- -as.numeric(fit$log_prob(current_state)) + 0.5 * t(momentum) %*% metric_inv %*% momentum
+        proposed_energy <- -as.numeric(fit$log_prob(proposed_state)) + 0.5 * t(proposed_momentum) %*% metric_inv %*% proposed_momentum
+
+        acceptance_ratio <- exp(current_energy - proposed_energy)
+        if (is.na(acceptance_ratio)) {
+          acceptance_ratio <- 0
+        }
+        if (is.infinite(acceptance_ratio)) {
+          acceptance_ratio <- 1
+        }
+      }
+
+      if (adaptive_stepsize) {
+        adapter$adapt_epsilon(acceptance_ratio)
+      }
+
+      U <- stats::runif(1)
+
+      if (!is.na(proposed_energy) && !is.na(acceptance_ratio) && U < acceptance_ratio) {
+
+        current_state <- proposed_state
+        samples[i,] <- current_state
+        leapfrogmomenta[[i]] <- leapfrog_result$momenta
+        leapfrogstates[[i]] <- leapfrog_result$states
+        energy[i,1] <- current_energy
+        energy[i,2] <- proposed_energy
+        metropolis_acceptance[i,1] <- U
+        mass_matrices[[i]] <- metric
+
+        if(metric_method=='ccipca'){
+          if (!init_done && i > 1) {
+            pca <- princomp(cov(samples[!is.na(samples[,1]),]))
+            xbar <- pca$center
+
+            pca <- list(values=pca$sdev^2,
+                        vectors=pca$loadings)
+
+            init_done <- T
+            last_updated_mass_step <- i
+
+            #values <- length(ncol(samples)) * (pca$values + 1e-3) / sum(pca$values + 1e-3)
+            values <- pca$values
+
+            # Step 2: Shrink the eigenvalues
+            #alpha <- 0.9^i  # Shrinkage parameter (0 <= alpha <= 1)
+            #lambda_target <- rep(1, length(initial_state))  # Target value for shrinkage (e.g., mean of eigenvalues)
+
+            # Apply the shrinkage
+            lambda_shrunk <- (i / (i + 5.0)) * values + 1e-3 * (5.0 / (i + 5.0))
+            #lambda_shrunk <- (1 - alpha) * values + alpha * lambda_target
+
+            #metric_inv <- pca$vectors %*% diag(values) %*% t(pca$vectors)
+            #metric <- pca$vectors %*% diag(1/values) %*% t(pca$vectors)
+            metric_inv <- pca$vectors %*% diag(lambda_shrunk) %*% t(pca$vectors)
+            metric <- pca$vectors %*% diag(1/lambda_shrunk) %*% t(pca$vectors)
+
+          } else if (init_done) {
+            smp <- samples[i,]
+
+            xbar <- updateMean(xbar, smp, i-1)
+
+            pca <- ccipca(pca$values, pca$vectors, smp, i-1, q = length(smp), center = xbar, l = min(i-1, 3))
+            last_updated_mass_step <- i
+            if (length(dim(pca$values))>1) {
+              values <- pca$values[,1]
+            } else {
+              values <- pca$values
+            }
+
+            # Step 2: Shrink the eigenvalues
+            #alpha <- 0.9^i  # Shrinkage parameter (0 <= alpha <= 1)
+            #lambda_target <- rep(1, length(values))  # Target value for shrinkage (e.g., mean of eigenvalues)
+
+            # Apply the shrinkage
+            #lambda_shrunk <- (1 - alpha) * values + alpha * lambda_target
+            lambda_shrunk <- (i / (i + 5.0)) * values + 1e-3 * (5.0 / (i + 5.0))
+
+            #metric_inv <- pca$vectors %*% diag(values) %*% t(pca$vectors)
+            #metric <- pca$vectors %*% diag(1/values) %*% t(pca$vectors)
+            metric_inv <- pca$vectors %*% diag(lambda_shrunk) %*% t(pca$vectors)
+            metric <- pca$vectors %*% diag(1/lambda_shrunk) %*% t(pca$vectors)
+
+            #values <- length(ncol(samples)) * (values + 1e-3) / sum(values + 1e-3)
+            #metric_inv <- pca$vectors %*% diag(values) %*% t(pca$vectors)
+            #metric <- pca$vectors %*% diag(1/(values)) %*% t(pca$vectors)
+          }
+        }
+
+        accepted = T
+      } else {
+        rejected[n_rejected,] <- proposed_state
+        n_rejected <- n_rejected + 1
+        if (n_rejected%%50==0) {
+          cat(paste0('Rejected ', n_rejected, ' samples.'))
+          cat('\r\n')
+        }
       }
     }
+
+    step_sizes[i] = adapter$get_epsilon()
+    i = i + 1
   }
 
-  return(list(samples=samples,
-              proposals = proposals,
+  ess <- apply(samples[!is.na(samples[,1]),], 2, calculate_ess)
+
+  return(list(samples=as_draws_matrix(samples),
               energy = energy,
-              metropolis_acceptance=metropolis_acceptance))
+              metropolis_acceptance=metropolis_acceptance,
+              mass_matrices = mass_matrices,
+              step_sizes = step_sizes,
+              leapfrog_momenta = leapfrogmomenta,
+              leapfrog_states = leapfrogstates,
+              rejected = rejected,
+              ess = ess))
 }
+
+

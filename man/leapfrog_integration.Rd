@@ -8,8 +8,10 @@ leapfrog_integration(
   current_state,
   momentum,
   step_size,
-  tgt_density,
-  num_steps
+  stan_obj,
+  num_steps,
+  returndetails = F,
+  M
 )
 }
 \arguments{
@@ -19,9 +21,9 @@ leapfrog_integration(
 
 \item{step_size}{A number.}
 
-\item{num_steps}{A number.}
+\item{stan_obj}{A number.}
 
-\item{gradient_function}{A number.}
+\item{num_steps}{A number.}
 }
 \value{
 A list of proposed state, proposed momentum and final gradient

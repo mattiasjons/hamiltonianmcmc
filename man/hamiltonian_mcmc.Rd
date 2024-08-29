@@ -9,12 +9,14 @@ hamiltonian_mcmc(
   num_samples,
   step_size,
   num_steps,
-  tgt_density,
-  auto_mass_matrix,
-  n_mass_matrix_comp,
-  M,
-  adaptive_mode = FALSE,
-  adaptive_target_acceptance = 0.85
+  stan_file,
+  stan_data,
+  metric_method = "ccipca",
+  metric = diag(length(initial_state)),
+  adaptive_stepsize = TRUE,
+  adaptive_stepsize_target_acceptance = 0.65,
+  returnleapfrogdetails = F,
+  epsilon = 0.01
 )
 }
 \arguments{
@@ -26,7 +28,11 @@ hamiltonian_mcmc(
 
 \item{num_steps}{Number of leap frog steps. If Adaptive Mode is enabled, this represents the initial value.}
 
-\item{tgt_density}{An object of class TargetDensity representing the target density to sample from.}
+\item{stan_obj}{An object of class TargetDensity representing the target density to sample from.}
+
+\item{auto_mass_matrix}{A boolean indicating wether the Mass matrix should be adjusted dynamically based on accepted posterior samples}
+
+\item{n_mass_matrix_comp}{If the mass matrix is dynamically adapted, it is done so using a eigendecomposition. This parameter sets the number of components for the decomposition.}
 
 \item{M}{The mass matrix for sampling momenta. Can be passed as either a full \eqn{d \times d} matrix or as a vector of length \eqn{d}, interpreted as the diagnoal of the mass matrix}
 
@@ -67,7 +73,8 @@ num_steps <- 30
 
 hmc_res <- hamiltonian_mcmc(initial_state = initial_state, num_samples = num_samples,
                             step_size = step_size, num_steps = num_steps,
-                            tgt_density = tgt_dens, M=rep(0.01, d),
+                            tgt_density = tgt_dens, auto_mass_matrix = F,
+                            n_mass_matrix_comp = 1, M=rep(0.01, d),
                             adaptive_mode = T, adaptive_target_acceptance = 0.8)
 
 plot(hmc_res$samples[100:1500,])
