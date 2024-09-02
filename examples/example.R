@@ -30,7 +30,7 @@ load("./examples/data/mvnormal.rdata")
 
 file <- file.path("./examples/mvnormal.stan")
 
-k = 200
+k = 500
 data_list <- list(N = nrow(X),
                   p = k,
                   y = y,
@@ -42,9 +42,17 @@ hmc_res <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, interc
                             500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),
                             metric_method = 'ccipca', adaptive_stepsize = T)
 
+hmc_res_cov <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 1)))[-1],
+                            500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),
+                            metric_method = 'cov', adaptive_stepsize = T)
+
 mcmc_intervals(hmc_res$samples[300:500,])
-mcmc_trace(hmc_res$samples[200:500,1:30])
-plot(log(hmc_res$step_sizes))
+mcmc_intervals(hmc_res_cov$samples[300:500,])
+mcmc_trace(hmc_res$samples[300:500,1:30])
+step_size_eigen <- -log(hmc_res$step_sizes) + max(log(hmc_res$step_sizes))
+step_size_cov <- -log(hmc_res_cov$step_sizes) + max(log(hmc_res$step_sizes))
+plot(1:500, step_size_eigen, col=1, pch=16)
+points(1:500, step_size_cov, col=2, pch=16)
 
 plot(y, data_list$X %*% colMeans(hmc_res$samples[200:500,]))
 

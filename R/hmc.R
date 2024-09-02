@@ -245,9 +245,9 @@ hamiltonian_mcmc <- function(initial_state,
   n_accepted <- 0
   last_updated_mass_step <- 0
 
-  adapter <- SimpleAveragingAdaptation$new(target_accept_prob = adaptive_stepsize_target_acceptance,
-                                         init_epsilon = step_size)
-  #adapter <- DualAveragingAdaptation$new(2000, 0.65, step_size, diag(length(initial_state)))
+  #adapter <- SimpleAveragingAdaptation$new(target_accept_prob = adaptive_stepsize_target_acceptance,
+  #                                       init_epsilon = step_size)
+  adapter <- DualAveragingAdaptation$new(2000, 0.65, step_size, diag(length(initial_state)))
 
   i = 1
   n_rejected = 1
@@ -328,8 +328,10 @@ hamiltonian_mcmc <- function(initial_state,
             #lambda_target <- rep(1, length(initial_state))  # Target value for shrinkage (e.g., mean of eigenvalues)
 
             # Apply the shrinkage
-            lambda_shrunk <- (i / (i + 5.0)) * values + 1e-3 * (5.0 / (i + 5.0))
-            #lambda_shrunk <- (1 - alpha) * values + alpha * lambda_target
+            #lambda_shrunk <- (i / (i + 5.0)) * values + 1e-3 * (5.0 / (i + 5.0))
+
+            tmp <- which(cumsum(values)/sum(values) > 0.9999)[1]
+            lambda_shrunk <- ifelse(values >= values[tmp], values, values[tmp])
 
             #metric_inv <- pca$vectors %*% diag(values) %*% t(pca$vectors)
             #metric <- pca$vectors %*% diag(1/values) %*% t(pca$vectors)
@@ -355,7 +357,9 @@ hamiltonian_mcmc <- function(initial_state,
 
             # Apply the shrinkage
             #lambda_shrunk <- (1 - alpha) * values + alpha * lambda_target
-            lambda_shrunk <- (i / (i + 5.0)) * values + 1e-3 * (5.0 / (i + 5.0))
+            #lambda_shrunk <- (i / (i + 5.0)) * values + 1e-3 * (5.0 / (i + 5.0))
+            tmp <- which(cumsum(values)/sum(values) > 0.9999)[1]
+            lambda_shrunk <- ifelse(values >= values[tmp], values, values[tmp])
 
             #metric_inv <- pca$vectors %*% diag(values) %*% t(pca$vectors)
             #metric <- pca$vectors %*% diag(1/values) %*% t(pca$vectors)
@@ -366,6 +370,12 @@ hamiltonian_mcmc <- function(initial_state,
             #metric_inv <- pca$vectors %*% diag(values) %*% t(pca$vectors)
             #metric <- pca$vectors %*% diag(1/(values)) %*% t(pca$vectors)
           }
+        } else if (metric_method == 'cov' & i > 1) {
+          covar <- cov(samples[!is.na(samples[,1]),])
+
+          metric_inv <- (i / (i + 5.0)) * covar +
+            1e-3 * (5.0 / (i + 5.0)) * diag(nrow(covar))
+          metric <- solve(metric_inv)
         }
 
         accepted = T
