@@ -48,12 +48,27 @@ hmc_res_cov <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, in
 
 mcmc_intervals(hmc_res$samples[300:500,])
 mcmc_intervals(hmc_res_cov$samples[300:500,])
+
 mcmc_trace(hmc_res$samples[300:500,1:30])
-step_size_eigen <- -log(hmc_res$step_sizes) + max(log(hmc_res$step_sizes))
-step_size_cov <- -log(hmc_res_cov$step_sizes) + max(log(hmc_res$step_sizes))
+mcmc_trace(hmc_res_cov$samples[300:500,1:30])
+
+step_size_eigen <- log(hmc_res$step_sizes)
+step_size_cov <- log(hmc_res_cov$step_sizes)
 plot(1:500, step_size_eigen, col=1, pch=16)
 points(1:500, step_size_cov, col=2, pch=16)
 
 plot(y, data_list$X %*% colMeans(hmc_res$samples[200:500,]))
 
-plot_leapfrog_steps(hmc_res, s=5)
+plot_leapfrog_steps(hmc_res_cov, s=30)
+
+mean(hmc_res$ess)
+mean(hmc_res_cov$ess)
+
+ess_s <- hmc_res$ess_s
+ess_s[,1] <- ess_s[,1] - min(ess_s[,1])
+
+ess_s_cov <- hmc_res_cov$ess_s
+ess_s_cov[,1] <- ess_s_cov[,1] - min(ess_s_cov[,1])
+
+plot(ess_s[,1], cumsum(ess_s[,2]), type = 'l', lwd=2, xlim = c(0, max(ess_s_cov[,1])))
+lines(ess_s_cov[,1], cumsum(ess_s_cov[,2]), col='red', lwd=2)

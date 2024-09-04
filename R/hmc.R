@@ -48,90 +48,6 @@ leapfrog_integration <- function(current_state, momentum,
               gradient = final_grad, states = states, momenta = momenta))
 }
 
-
-calculate_ess <- function(samples) {
-  n <- length(samples)
-
-  autocorrelation <- calculate_autocorrelation_fft(samples)
-
-  sum_autocorr <- 0
-  for (k in 1:(n - 1)) {
-    if (autocorrelation[k + 1] < 0) {
-      break
-    }
-    sum_autocorr <- sum_autocorr + autocorrelation[k + 1]
-  }
-
-  ess <- n / (1 + 2 * sum_autocorr)
-
-  return(ess)
-}
-
-calculate_autocorrelation_fft <- function(x) {
-  n <- length(x)
-
-  # Subtract the mean
-  x_centered <- x - mean(x)
-
-  # FFT of the time series
-  fft_x <- fft(x_centered)
-
-  # Compute the power spectrum
-  power_spectrum <- fft_x * Conj(fft_x)
-
-  # Inverse FFT to get the autocovariance function
-  autocovariance <- Re(fft(power_spectrum, inverse = TRUE) / n)
-
-  # Normalize by the variance to get the autocorrelation function
-  autocorrelation <- autocovariance / autocovariance[1]
-
-  # Return the autocorrelation function
-  return(autocorrelation)
-}
-
-
-adapt_epsilon <- function(accept_prob, adapt_epsilon_counter,
-                          h_bar, target_accept_prob,
-                          mu, gamma, kappa, t0,
-                          log_epsilon_bar, epsilon) {
-
-  # Ensure accept_prob does not exceed 1
-  if (accept_prob > 1) {
-    accept_prob <- 1.0
-  }
-
-  # Increment the adaptation counter
-  adapt_epsilon_counter <- adapt_epsilon_counter + 1
-  counter <- adapt_epsilon_counter
-
-  # Calculate eta
-  eta <- 1.0 / (counter + t0)
-
-  # Update h_bar
-  h_bar <- (1 - eta) * h_bar + eta * (target_accept_prob - accept_prob)
-
-  # Calculate log_epsilon
-  log_epsilon <- mu - (sqrt(counter) / gamma) * h_bar
-
-  # Calculate x_eta
-  x_eta <- counter^(-kappa)
-
-  # Update log_epsilon_bar
-  log_epsilon_bar <- x_eta * log_epsilon + (1 - x_eta) * log_epsilon_bar
-
-  # Update epsilon
-  epsilon <- exp(log_epsilon)
-
-  return(list(
-    epsilon = epsilon,
-    h_bar = h_bar,
-    log_epsilon_bar = log_epsilon_bar,
-    adapt_epsilon_counter = adapt_epsilon_counter
-  ))
-}
-
-
-
 #' Sample using hamiltonian MCMC
 #'
 #' @param initial_state A vector with length \eqn{d}, representing the initial state.
@@ -194,6 +110,7 @@ hamiltonian_mcmc <- function(initial_state,
 
   library(cmdstanr)
   require(posterior)
+  require(coda)
 
   file <- file.path(stan_file)
   mod <- cmdstan_model(file, compile = F)
@@ -244,6 +161,7 @@ hamiltonian_mcmc <- function(initial_state,
   init_done <- F
   n_accepted <- 0
   last_updated_mass_step <- 0
+  ess_s <- matrix(nrow = num_samples/5, ncol=2)
 
   #adapter <- SimpleAveragingAdaptation$new(target_accept_prob = adaptive_stepsize_target_acceptance,
   #                                       init_epsilon = step_size)
@@ -309,76 +227,27 @@ hamiltonian_mcmc <- function(initial_state,
         metropolis_acceptance[i,1] <- U
         mass_matrices[[i]] <- metric
 
-        if(metric_method=='ccipca'){
-          if (!init_done && i > 1) {
-            pca <- eigen(cov(samples[!is.na(samples[,1]),]))
-            xbar <- colMeans(samples[!is.na(samples[,1]),])
-
-            #pca <- list(values=pca$sdev^2,
-            #            vectors=pca$loadings)
-
-            init_done <- T
-            last_updated_mass_step <- i
-
-            #values <- length(ncol(samples)) * (pca$values + 1e-3) / sum(pca$values + 1e-3)
-            values <- pca$values
-
-            # Step 2: Shrink the eigenvalues
-            #alpha <- 0.9^i  # Shrinkage parameter (0 <= alpha <= 1)
-            #lambda_target <- rep(1, length(initial_state))  # Target value for shrinkage (e.g., mean of eigenvalues)
-
-            # Apply the shrinkage
-            #lambda_shrunk <- (i / (i + 5.0)) * values + 1e-3 * (5.0 / (i + 5.0))
-
-            tmp <- which(cumsum(values)/sum(values) > 0.9999)[1]
-            lambda_shrunk <- ifelse(values >= values[tmp], values, values[tmp])
-
-            #metric_inv <- pca$vectors %*% diag(values) %*% t(pca$vectors)
-            #metric <- pca$vectors %*% diag(1/values) %*% t(pca$vectors)
-            metric_inv <- pca$vectors %*% diag(lambda_shrunk) %*% t(pca$vectors)
-            metric <- pca$vectors %*% diag(1/lambda_shrunk) %*% t(pca$vectors)
-
-          } else if (init_done) {
-            smp <- samples[i,]
-
-            xbar <- updateMean(xbar, smp, i-1)
-
-            pca <- ccipca(pca$values, pca$vectors, smp, i-1, q = length(smp), center = xbar, l = min(i-1, 3))
-            last_updated_mass_step <- i
-            if (length(dim(pca$values))>1) {
-              values <- pca$values[,1]
-            } else {
-              values <- pca$values
-            }
-
-            # Step 2: Shrink the eigenvalues
-            #alpha <- 0.9^i  # Shrinkage parameter (0 <= alpha <= 1)
-            #lambda_target <- rep(1, length(values))  # Target value for shrinkage (e.g., mean of eigenvalues)
-
-            # Apply the shrinkage
-            #lambda_shrunk <- (1 - alpha) * values + alpha * lambda_target
-            #lambda_shrunk <- (i / (i + 5.0)) * values + 1e-3 * (5.0 / (i + 5.0))
-            tmp <- which(cumsum(values)/sum(values) > 0.9999)[1]
-            lambda_shrunk <- ifelse(values >= values[tmp], values, values[tmp])
-
-            #metric_inv <- pca$vectors %*% diag(values) %*% t(pca$vectors)
-            #metric <- pca$vectors %*% diag(1/values) %*% t(pca$vectors)
-            metric_inv <- pca$vectors %*% diag(lambda_shrunk) %*% t(pca$vectors)
-            metric <- pca$vectors %*% diag(1/lambda_shrunk) %*% t(pca$vectors)
-
-            #values <- length(ncol(samples)) * (values + 1e-3) / sum(values + 1e-3)
-            #metric_inv <- pca$vectors %*% diag(values) %*% t(pca$vectors)
-            #metric <- pca$vectors %*% diag(1/(values)) %*% t(pca$vectors)
+        # As soon as we have two samples, initialize the covariance adapter
+        if (i>2) {
+          cov_adapter$add_sample(proposed_state)
+          metric <- cov_adapter$metric()
+          metric_inv <- cov_adapter$sample_covariance()
+        } else if (i == 2) {
+          if(metric_method =='ccipca') {
+            cov_adapter = CCIPCA_Adapter$new(samples[!is.na(samples[,1]),], 0.9999)
+          } else {
+            cov_adapter = WelfordAdapter$new(samples[!is.na(samples[,1]),])
           }
-        } else if (metric_method == 'cov' & i > 1) {
-          covar <- cov(samples[!is.na(samples[,1]),])
-
-          metric_inv <- (i / (i + 5.0)) * covar +
-            1e-3 * (5.0 / (i + 5.0)) * diag(nrow(covar))
-          metric <- solve(metric_inv)
+          metric <- cov_adapter$metric()
+          metric_inv <- cov_adapter$sample_covariance()
         }
 
         accepted = T
+
+        if (i%%5==0) {
+          ess_s[i/5,] <- c(Sys.time(), mean(apply(samples[(i-4):i,], 2, effectiveSize)))
+        }
+
       } else {
         rejected[n_rejected,] <- proposed_state
         n_rejected <- n_rejected + 1
@@ -393,7 +262,7 @@ hamiltonian_mcmc <- function(initial_state,
     i = i + 1
   }
 
-  ess <- apply(samples[!is.na(samples[,1]),], 2, calculate_ess)
+  ess <- effectiveSize(samples)
 
   return(list(samples=as_draws_matrix(samples),
               energy = energy,
@@ -403,7 +272,8 @@ hamiltonian_mcmc <- function(initial_state,
               leapfrog_momenta = leapfrogmomenta,
               leapfrog_states = leapfrogstates,
               rejected = rejected,
-              ess = ess))
+              ess = ess,
+              ess_s = ess_s))
 }
 
 
