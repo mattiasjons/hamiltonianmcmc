@@ -65,6 +65,7 @@ WelfordAdapter <- R6Class("WelfordAdapter",
 CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                           inherit = MetricAdapter,
                       public = list(
+                        l = NULL,
                         init_done = FALSE,
                         pca_values = NULL,
                         pca_vectors = NULL,
@@ -72,12 +73,13 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                         variance_explained = NULL,
                         count = 0,
 
-                        initialize = function(samples, variance_explained) {
+                        initialize = function(samples, variance_explained, l) {
                           require(onlinePCA)
 
                           stopifnot("Number of observations must be > 1" = nrow(samples)>1)
 
                           self$variance_explained <- variance_explained
+                          self$l = l
                           pca <- eigen(cov(samples))
                           self$pca_values <- as.vector(pca$values)
                           self$pca_vectors <- pca$vectors
@@ -91,7 +93,8 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                           self$xbar <- self$update_mean(self$xbar, new_sample, self$count)
 
                           pca <- ccipca(self$pca_values, self$pca_vectors, new_sample, self$count,
-                                        q = length(new_sample), center = self$xbar, l = min(3, self$count))
+                                        q = length(new_sample), center = self$xbar,
+                                        l = min(self$l * 0.995^(self$count-1), self$count))
 
                           if (length(dim(pca$values))>1) {
                             values <- pca$values[,1]

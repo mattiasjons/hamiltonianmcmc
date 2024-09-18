@@ -40,7 +40,7 @@ library(glmnet) #Let's "cheat" to find good starting values.
 
 hmc_res <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 1)))[-1],
                             500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),
-                            metric_method = 'ccipca', adaptive_stepsize = T)
+                            metric_method = 'ccipca', adaptive_stepsize = T, 4)
 
 hmc_res_cov <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 1)))[-1],
                             500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),
@@ -54,8 +54,10 @@ mcmc_trace(hmc_res_cov$samples[300:500,1:30])
 
 step_size_eigen <- log(hmc_res$step_sizes)
 step_size_cov <- log(hmc_res_cov$step_sizes)
-plot(1:500, step_size_eigen, col=1, pch=16)
+plot(1:500, step_size_eigen, col=1, pch=16,
+     xlab='Sample', ylab='log(Step size)')
 points(1:500, step_size_cov, col=2, pch=16)
+legend('bottomright', legend=c('Welford', 'Spectral'), col=c('red', 'black'), pch=16)
 
 plot(y, data_list$X %*% colMeans(hmc_res$samples[200:500,]))
 
@@ -70,5 +72,11 @@ ess_s[,1] <- ess_s[,1] - min(ess_s[,1])
 ess_s_cov <- hmc_res_cov$ess_s
 ess_s_cov[,1] <- ess_s_cov[,1] - min(ess_s_cov[,1])
 
-plot(ess_s[,1], cumsum(ess_s[,2]), type = 'l', lwd=2, xlim = c(0, max(ess_s_cov[,1])))
-lines(ess_s_cov[,1], cumsum(ess_s_cov[,2]), col='red', lwd=2)
+plot(ess_s[,1], cumsum(ess_s[,2])/ess_s[,1], type = 'l',
+     lwd=2, xlim = c(0, max(ess_s_cov[,1])),
+     ylim=c(0, 12), xlab='Seconds', ylab='ESS/s')
+
+lines(ess_s_cov[,1],
+      cumsum(ess_s_cov[,2])/ess_s_cov[,1],
+      col='red', lwd=2)
+

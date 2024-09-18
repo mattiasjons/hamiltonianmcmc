@@ -2,10 +2,6 @@ library(R6)
 
 DualAveragingAdaptation <- R6Class("DualAveragingAdaptation",
                                    public = list(
-                                     initial_window = NULL,
-                                     base_window = NULL,
-                                     terminal_window = NULL,
-                                     counter = NULL,
                                      gamma = NULL,
                                      t0 = NULL,
                                      kappa = NULL,
@@ -14,20 +10,8 @@ DualAveragingAdaptation <- R6Class("DualAveragingAdaptation",
                                      log_epsilon_bar = NULL,
                                      h_bar = NULL,
                                      adapt_epsilon_counter = NULL,
-                                     mass_matrix = NULL,
-                                     inv_mass_matrix = NULL,
                                      target_accept_prob = NULL,
-                                     warmup_steps = NULL,
-                                     next_window = NULL,
-                                     adapting = NULL,
-                                     samples = NULL,
-                                     num_samples = NULL,
-                                     initialize = function(num_warmup_steps, target_accept_prob, init_epsilon, init_inv_mass_matrix) {
-                                       # Windowing constants (defaults similar to Stan)
-                                       self$initial_window = 75
-                                       self$base_window <- 25
-                                       self$terminal_window <- 50
-
+                                     initialize = function(target_accept_prob, init_epsilon) {
                                        # Windowing counter
                                        self$counter <- 0
 
@@ -45,16 +29,6 @@ DualAveragingAdaptation <- R6Class("DualAveragingAdaptation",
 
                                        # Target acceptance probability
                                        self$target_accept_prob <- target_accept_prob
-
-                                       # Warmup steps
-                                       minimum_warmup_steps <- self$initial_window + self$terminal_window + self$base_window
-                                       if (num_warmup_steps < minimum_warmup_steps) {
-                                         stop(paste("Number of warmup steps less than the minimum value", minimum_warmup_steps))
-                                       }
-
-                                       self$warmup_steps <- num_warmup_steps
-                                       self$next_window <- self$initial_window + self$base_window
-                                       self$adapting <- TRUE
                                      },
 
                                      adapt_epsilon = function(accept_prob) {
@@ -81,24 +55,6 @@ DualAveragingAdaptation <- R6Class("DualAveragingAdaptation",
 
                                      get_epsilon = function() {
                                        self$epsilon
-                                     },
-
-                                     step = function(x, accept_prob) {
-                                       if (!self$adapting) {
-                                         return(FALSE)
-                                       }
-
-                                       self$counter <- self$counter + 1
-
-                                       if (self$counter >= self$warmup_steps) {
-                                         self$epsilon <- self$final_epsilon()
-                                         self$adapting <- FALSE
-                                         return(FALSE)
-                                       }
-
-                                       self$adapt_epsilon(accept_prob)
-
-                                       return(FALSE)
                                      }
                                    ),
                                    private = list(

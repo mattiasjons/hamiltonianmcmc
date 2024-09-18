@@ -105,7 +105,8 @@ hamiltonian_mcmc <- function(initial_state,
                              adaptive_stepsize = TRUE,
                              adaptive_stepsize_target_acceptance = 0.65,
                              returnleapfrogdetails = F,
-                             epsilon = 1e-2) {
+                             epsilon = 1e-2,
+                             ccipca_l = 3) {
   #TODO: Asserts
 
   library(cmdstanr)
@@ -234,7 +235,7 @@ hamiltonian_mcmc <- function(initial_state,
           metric_inv <- cov_adapter$sample_covariance()
         } else if (i == 2) {
           if(metric_method =='ccipca') {
-            cov_adapter = CCIPCA_Adapter$new(samples[!is.na(samples[,1]),], 0.9999)
+            cov_adapter = CCIPCA_Adapter$new(samples[!is.na(samples[,1]),], 0.9999, ccipca_l)
           } else {
             cov_adapter = WelfordAdapter$new(samples[!is.na(samples[,1]),])
           }
