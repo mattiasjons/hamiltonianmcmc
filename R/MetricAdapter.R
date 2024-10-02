@@ -65,20 +65,20 @@ WelfordAdapter <- R6Class("WelfordAdapter",
 CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                           inherit = MetricAdapter,
                       public = list(
+                        k = NULL,
                         l = NULL,
                         init_done = FALSE,
                         pca_values = NULL,
                         pca_vectors = NULL,
                         xbar = NULL,
-                        variance_explained = NULL,
                         count = 0,
 
-                        initialize = function(samples, variance_explained, l) {
+                        initialize = function(samples, k, l) {
                           require(onlinePCA)
 
                           stopifnot("Number of observations must be > 1" = nrow(samples)>1)
 
-                          self$variance_explained <- variance_explained
+                          self$k = k
                           self$l = l
                           pca <- eigen(cov(samples))
                           self$pca_values <- as.vector(pca$values)
@@ -93,8 +93,10 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                           self$xbar <- self$update_mean(self$xbar, new_sample, self$count)
 
                           pca <- ccipca(self$pca_values, self$pca_vectors, new_sample, self$count,
-                                        q = length(new_sample), center = self$xbar,
-                                        l = min(self$l * 0.995^(self$count-1), self$count))
+                                        q = self$k, center = self$xbar,
+                                        #l = min(self$l * 0.995^(self$count-1), self$count))
+                                        #l = min(4, self$count))
+                                        l = 0)
 
                           if (length(dim(pca$values))>1) {
                             values <- pca$values[,1]
@@ -103,22 +105,50 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                           }
                           self$pca_values <- values
                           self$pca_vectors <- pca$vectors
-
-                          #self$pca_vectors <- pca$vectors #Needed?
                           self$count <- self$count + 1
                         },
 
-                        sample_covariance = function() {
-                          tmp <- which(cumsum(self$pca_values) / sum(self$pca_values) > self$variance_explained)[1]
-                          lambda_shrunk <- ifelse(self$pca_values >= self$pca_values[tmp], self$pca_values, self$pca_values[tmp])
+                        sample_covariance = function(beta = 0.5) {
+                          ## Non Linear Eigenvalue Regularization...
+                          #tmp <- which((cumsum(self$pca_values) / sum(self$pca_values)) > explained_variance)[1]
+                          #tmp2 <- which((cumsum(self$pca_values) / sum(self$pca_values)) < min_eigen)
+                          #if (length(tmp2) > 0) {
+                          #  tmp2 <- tmp2[length(tmp2)]
+                          #} else {
+                          #  tmp2 <- 1
+                          #}
+
+                          #lambda_shrunk <- ifelse(self$pca_values >= self$pca_values[tmp], self$pca_values, self$pca_values[tmp])
+                          #lambda_shrunk <- ifelse(lambda_shrunk > lambda_shrunk[tmp2], lambda_shrunk[tmp2], lambda_shrunk)
+
+                          ## Truncate 0 eigenvalues
+                          #lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
+
+                          ## Linear shrinking of eigenvalues
+                          lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
 
                           metric_inv <- self$pca_vectors %*% diag(lambda_shrunk) %*% t(self$pca_vectors)
                           return(metric_inv)
                         },
 
-                        metric = function() {
-                          tmp <- which(cumsum(self$pca_values) / sum(self$pca_values) > self$variance_explained)[1]
-                          lambda_shrunk <- ifelse(self$pca_values >= self$pca_values[tmp], self$pca_values, self$pca_values[tmp])
+                        metric = function(beta = 0.5) {
+                          ## Non Linear Eigenvalue Regularization...
+                          #tmp <- which((cumsum(self$pca_values) / sum(self$pca_values)) > explained_variance)[1]
+                          #tmp2 <- which((cumsum(self$pca_values) / sum(self$pca_values)) < min_eigen)
+                          #if (length(tmp2) > 0) {
+                          #  tmp2 <- tmp2[length(tmp2)]
+                          #} else {
+                          #  tmp2 <- 1
+                          #}
+
+                          #lambda_shrunk <- ifelse(self$pca_values >= self$pca_values[tmp], self$pca_values, self$pca_values[tmp])
+                          #lambda_shrunk <- ifelse(lambda_shrunk > lambda_shrunk[tmp2], lambda_shrunk[tmp2], lambda_shrunk)
+
+                          ## Truncate 0 eigenvalues
+                          #lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
+
+                          ## Linear shrinking of eigenvalues
+                          lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
 
                           metric <- self$pca_vectors %*% diag(1 / lambda_shrunk) %*% t(self$pca_vectors)
                           return(metric)
@@ -127,6 +157,10 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                         # Helper function to update the mean with a new sample
                         update_mean = function(xbar, new_sample, n) {
                           return(((n * xbar) + new_sample) / (n + 1))
+                        },
+
+                        get_eigvals = function() {
+                          return(self$pca_values)
                         }
                       ),
                       private = list(

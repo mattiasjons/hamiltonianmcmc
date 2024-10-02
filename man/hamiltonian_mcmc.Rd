@@ -16,7 +16,9 @@ hamiltonian_mcmc(
   adaptive_stepsize = TRUE,
   adaptive_stepsize_target_acceptance = 0.65,
   returnleapfrogdetails = F,
-  epsilon = 0.01
+  epsilon = 0.01,
+  ccipca_l = 3,
+  ccipca_k = 20
 )
 }
 \arguments{
