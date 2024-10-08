@@ -102,12 +102,9 @@ hamiltonian_mcmc <- function(initial_state,
                              stan_data,
                              metric_method='ccipca',
                              metric = diag(length(initial_state)),
-                             adaptive_stepsize = TRUE,
                              adaptive_stepsize_target_acceptance = 0.65,
                              returnleapfrogdetails = F,
-                             epsilon = 1e-2,
-                             ccipca_l = 3,
-                             ccipca_k = 20) {
+                             metric_adapter_settings = list(NA)) {
   #TODO: Asserts
 
   library(cmdstanr)
@@ -150,7 +147,7 @@ hamiltonian_mcmc <- function(initial_state,
   eg_val <- NA
   if (metric_method =='ccipca') {
     library(onlinePCA)
-    eg_val <- matrix(nrow = num_samples, ncol=ccipca_k)
+    eg_val <- matrix(nrow = num_samples, ncol=metric_adapter_settings$k)
   }
 
   current_state <- initial_state
@@ -168,7 +165,10 @@ hamiltonian_mcmc <- function(initial_state,
   ess_s <- matrix(nrow = num_samples/5, ncol=2)
   tau_hist <- matrix(nrow = num_samples, ncol=2)
 
-  adapter <- DualAveragingAdaptation$new(0.65, step_size, 0.2)
+  #adapter <- DualAveragingAdaptation$new(0.65, step_size, 0.2)
+  adapter <- HMCAdapter$new(metric_method=metric_method,
+                        step_size=step_size, metric=metric,
+                        metric_settings = metric_adapter_settings)
 
   i = 1
   n_rejected = 1
@@ -213,15 +213,17 @@ hamiltonian_mcmc <- function(initial_state,
         }
       }
 
-      if (adaptive_stepsize) {
-        adapter$adapt_step(acceptance_ratio)
-        cat(adapter$get_epsilon())
-        cat('\r\n')
-      }
+      adapter$adapt_step(acceptance_ratio)
+      cat(adapter$get_epsilon())
+      cat('\r\n')
 
       U <- stats::runif(1)
 
       if (!is.na(proposed_energy) && !is.na(acceptance_ratio) && U < acceptance_ratio) {
+
+        adapter$add_sample(proposed_state)
+        metric <- adapter$metric()
+        metric_inv <- adapter$sample_covariance()
 
         current_state <- proposed_state
         samples[i,] <- current_state
@@ -231,42 +233,6 @@ hamiltonian_mcmc <- function(initial_state,
         energy[i,2] <- proposed_energy
         metropolis_acceptance[i,1] <- U
         mass_matrices[[i]] <- metric
-
-        if(metric_method =='ccipca') {
-          if (i == 2) {
-            cov_adapter = WelfordAdapter$new(samples[!is.na(samples[,1]),])
-            metric <- cov_adapter$metric()
-            metric_inv <- cov_adapter$sample_covariance()
-          } else if (i > 2 & i < ccipca_k) {
-            cov_adapter$add_sample(proposed_state)
-
-            metric <- cov_adapter$metric()
-            metric_inv <- cov_adapter$sample_covariance()
-          } else if (i==ccipca_k) {
-            cov_adapter = CCIPCA_Adapter$new(samples[!is.na(samples[,1]),], ccipca_k, ccipca_l) #TODO: Use the sample cov from the Welford adapter instead
-            metric <- cov_adapter$metric() #adapter$get_tau())
-            metric_inv <- cov_adapter$sample_covariance() #adapter$get_tau())
-            adapter <- DualAveragingAdaptation$new(0.65, step_size, 0.2)
-            adapter$adapt_step(acceptance_ratio)
-          } else if (i>ccipca_k) {
-            cov_adapter$add_sample(proposed_state)
-
-            metric <- cov_adapter$metric(beta = adapter$get_tau()[1])
-            metric_inv <- cov_adapter$sample_covariance(beta = adapter$get_tau()[1])
-            eg_val[i,] <- cov_adapter$get_eigvals()
-          }
-        } else {
-          if (i == 2) {
-              cov_adapter = WelfordAdapter$new(samples[!is.na(samples[,1]),])
-              metric <- cov_adapter$metric()
-              metric_inv <- cov_adapter$sample_covariance()
-          } else if (i > 2) {
-            cov_adapter$add_sample(proposed_state)
-
-            metric <- cov_adapter$metric()
-            metric_inv <- cov_adapter$sample_covariance()
-          }
-        }
 
         accepted = T
 
@@ -285,7 +251,12 @@ hamiltonian_mcmc <- function(initial_state,
     }
 
     step_sizes[i] = adapter$get_epsilon()
-    tau_hist[i, ] <- c(adapter$get_tau()[1], adapter$get_tau()[1])
+
+    if (metric_method =='ccipca') {
+      tau_hist[i, ] <- c(adapter$get_tau(), adapter$get_tau())
+      eg_val[i,] <- adapter$get_eigvals()
+    }
+
     i = i + 1
 
   }
@@ -299,7 +270,7 @@ hamiltonian_mcmc <- function(initial_state,
               step_sizes = step_sizes,
               leapfrog_momenta = leapfrogmomenta,
               leapfrog_states = leapfrogstates,
-              rejected = rejected,
+              rejected = rejected, #TODO: return only divergent samples instead. All rejected are probably not interesting.
               stan_obj = fit,
               ess = ess,
               ess_s = ess_s,
