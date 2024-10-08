@@ -81,8 +81,8 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                           self$k = k
                           self$l = l
                           pca <- eigen(cov(samples))
-                          self$pca_values <- as.vector(pca$values)
-                          self$pca_vectors <- pca$vectors
+                          self$pca_values <- as.vector(pca$values)[1:k]
+                          self$pca_vectors <- pca$vectors[,1:k]
                           self$xbar <- colMeans(samples)
                           self$count <- nrow(samples)
                         },
@@ -167,3 +167,28 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                       )
 )
 
+#' @export
+DummyAdapter <- R6Class("DummyAdapter",
+                          inherit = MetricAdapter,
+                          public = list(
+                            metric_var = NULL,
+
+                            # Initialization method
+                            initialize = function(metric) {
+                              self$metric_var = metric
+                            },
+
+                            # Method to update the statistics with a new multidimensional value
+                            add_sample = function(new_value) {
+                            },
+
+                            # Method to return sample variance
+                            sample_covariance = function() {
+                              return(solve(self$metric_var))
+                            },
+
+                            metric = function() {
+                              return(self$metric_var)
+                            }
+                          )
+)

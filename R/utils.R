@@ -212,5 +212,6 @@ plot_esjd <- function(hmc_lst) {
   esjd <- do.call(rbind, esjd)
   esjd$method <- rep(names(hmc_lst), sapply(hmc_lst, function(hmc_res) nrow(hmc_res$samples)-1))
 
-  ggplot(esjd, aes(x=i, y=esjd, col=method)) + geom_point(alpha=0.2) + geom_smooth()
+  ggplot(esjd, aes(x=i, y=esjd, col=method)) + geom_point(alpha=0.2) + geom_smooth() +
+    coord_cartesian(ylim = c(0, quantile(esjd$esjd, 0.99)))
 }

@@ -138,7 +138,7 @@ DualAveragingAdaptation <- R6Class("DualAveragingAdaptation",
                                      },
 
                                      get_tau = function() {
-                                       self$tau  # tau is already transformed to be in [0, 1]
+                                       self$tau[1]  # tau is already transformed to be in [0, 1]
                                      }#,
 
                                      #get_tau_2 = function() {

@@ -42,12 +42,12 @@ data_list <- list(N = nrow(X),
 library(glmnet) #Let's "cheat" to find good starting values.
 
 hmc_res <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 0.01)))[-1],
-                            500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),
-                            metric_method = 'ccipca', adaptive_stepsize = T, ccipca_l = 3, ccipca_k=50)
+                            num_samples = 500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),
+                            metric_method = 'ccipca', metric_adapter_settings = list(k=84))
 
 hmc_res_cov <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 0.01)))[-1],
                             500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),
-                            metric_method = 'cov', adaptive_stepsize = T)
+                            metric_method = 'welford')
 
 mcmc_intervals(hmc_res$samples[300:500,])
 mcmc_intervals(hmc_res_cov$samples[300:500,])
@@ -69,5 +69,4 @@ mean(hmc_res$ess)
 mean(hmc_res_cov$ess)
 
 plot_ess(hmc_lst)
-
 plot_esjd(hmc_lst)
