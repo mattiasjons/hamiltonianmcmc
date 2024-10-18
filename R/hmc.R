@@ -144,16 +144,21 @@ hamiltonian_mcmc <- function(initial_state,
 
   metric_inv <- MASS::ginv(metric)
 
+  reg_method <- 'none'
   eg_val <- NA
-  if (metric_method =='ccipca') {
+  if (metric_method %in% c('ccipca', 'incpca')) {
     library(onlinePCA)
     eg_val <- matrix(nrow = num_samples, ncol=metric_adapter_settings$k)
+
+    if (!is.null(metric_adapter_settings$reg_method)) {
+      reg_method <- metric_adapter_settings$reg_method
+    }
   }
 
   current_state <- initial_state
   samples <- matrix(nrow = num_samples, ncol = length(initial_state))
   rejected <- matrix(nrow = 100 * num_samples, ncol = length(initial_state)) #TODO: Make this more efficient...
-  energy <- matrix(nrow = num_samples, ncol=2)
+  energy <- matrix(nrow = num_samples, ncol=4)
   leapfrogmomenta <- list()
   leapfrogstates <- list()
   metropolis_acceptance = matrix(nrow = num_samples, ncol=1)
@@ -167,8 +172,9 @@ hamiltonian_mcmc <- function(initial_state,
 
   #adapter <- DualAveragingAdaptation$new(0.65, step_size, 0.2)
   adapter <- HMCAdapter$new(metric_method=metric_method,
-                        step_size=step_size, metric=metric,
-                        metric_settings = metric_adapter_settings)
+                            reg_method = reg_method,
+                            step_size=step_size, metric=metric,
+                            metric_settings = metric_adapter_settings)
 
   i = 1
   n_rejected = 1
@@ -197,12 +203,19 @@ hamiltonian_mcmc <- function(initial_state,
 
       # Metropolis acceptance step
       if(any(is.na(proposed_state)) | any(is.na(proposed_momentum))) {
-        current_energy <- -as.numeric(fit$log_prob(current_state)) + 0.5 * t(momentum) %*% metric_inv %*% momentum
+        potential_energy <- -as.numeric(fit$log_prob(current_state))
+        kinetic_energy <- 0.5 * t(momentum) %*% metric_inv %*% momentum
+        current_energy <- potential_energy + kinetic_energy
         proposed_energy <- NA
         acceptance_ratio <- 0
       } else {
-        current_energy <- -as.numeric(fit$log_prob(current_state)) + 0.5 * t(momentum) %*% metric_inv %*% momentum
-        proposed_energy <- -as.numeric(fit$log_prob(proposed_state)) + 0.5 * t(proposed_momentum) %*% metric_inv %*% proposed_momentum
+        potential_energy <- -as.numeric(fit$log_prob(current_state))
+        kinetic_energy <- 0.5 * t(momentum) %*% metric_inv %*% momentum
+        current_energy <- potential_energy + kinetic_energy
+
+        proposed_potential_energy <- -as.numeric(fit$log_prob(proposed_state))
+        proposed_kinetic_energy <- 0.5 * t(proposed_momentum) %*% metric_inv %*% proposed_momentum
+        proposed_energy <- proposed_potential_energy + proposed_kinetic_energy
 
         acceptance_ratio <- exp(current_energy - proposed_energy)
         if (is.na(acceptance_ratio)) {
@@ -229,8 +242,11 @@ hamiltonian_mcmc <- function(initial_state,
         samples[i,] <- current_state
         leapfrogmomenta[[i]] <- leapfrog_result$momenta
         leapfrogstates[[i]] <- leapfrog_result$states
-        energy[i,1] <- current_energy
-        energy[i,2] <- proposed_energy
+        energy[i,] <- c(potential_energy,
+                        kinetic_energy,
+                        proposed_potential_energy,
+                        proposed_kinetic_energy)
+
         metropolis_acceptance[i,1] <- U
         mass_matrices[[i]] <- metric
 
@@ -252,8 +268,8 @@ hamiltonian_mcmc <- function(initial_state,
 
     step_sizes[i] = adapter$get_epsilon()
 
-    if (metric_method =='ccipca') {
-      tau_hist[i, ] <- c(adapter$get_tau(), adapter$get_tau())
+    if (metric_method %in% c('ccipca', 'incpca')) {
+      tau_hist[i, ] <- c(adapter$get_tau(), adapter$get_tau_2())
       eg_val[i,] <- adapter$get_eigvals()
     }
 

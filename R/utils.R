@@ -117,6 +117,50 @@ plot_eigenvalues_linear_shrink <- function(hmc_res, log=F) {
     scale_color_discrete(guide='none')
 }
 
+#' Plot eigenvalue spectra for each step of the adaptation.
+#' Use this alternative when minimum/maximum truncation/shrinking of eigenvalues has been applied.
+#'
+#' @param hmc_res A list containing the entry 'eig_values' normally output from the hamiltonian_mcmc function when metric_method is set to something that returns eigenvalues.
+#' @param log Should the plot be drawn on log scale?
+#' @export
+plot_eigenvalues_minmax_shrink <- function(hmc_res, log=F) {
+  require(ggplot2)
+
+  get_df <- function(k, log=F) {
+    n <- ncol(hmc_res$eig_values)
+    z_raw <- hmc_res$eig_values[k,]
+    start_eigval <- ceiling(hmc_res$tau[k,1] * n)
+
+    z_shrunk <- z_raw
+    z_shrunk[1:start_eigval] <- z_shrunk[start_eigval]
+
+    tmp <- which((cumsum(z_shrunk) / sum(z_shrunk)) > hmc_res$tau[k,2])[1]
+    z_shrunk <- ifelse(z_shrunk >= z_shrunk[tmp], z_shrunk, z_shrunk[tmp])
+
+    if (log) {
+      z_df <- data.frame(k=k, i=1:n, ev=log(z_raw))
+      z_df_shrunk <- data.frame(k=k, i=1:n, ev=log(z_shrunk))
+    } else {
+      z_df <- data.frame(k=k, i=1:n, ev=z_raw)
+      z_df_shrunk <- data.frame(k=k, i=1:n, ev=z_shrunk)
+    }
+
+    return(list(z_df, z_df_shrunk))
+  }
+  n <- nrow(hmc_res$samples)
+  n_min <- which(!is.na(hmc_res$eig_values[,1]))[1]
+  dfs <- lapply(n_min:n, get_df, log=log)
+  z_df <- do.call(rbind, lapply(dfs, function(d) d[[1]]))
+  z_df$Type <- 'Raw'
+  z_shrunk <- do.call(rbind, lapply(dfs, function(d) d[[2]]))
+  z_shrunk$Type <- 'Shrunk'
+
+  z_df <- rbind(z_df, z_shrunk)
+
+  ggplot(z_df, aes(x=i, y=ev, col=Type, group=interaction(k,Type))) + geom_line(alpha=0.3) +
+    scale_color_discrete(guide='none')
+}
+
 #' Plot the adaptation of parameters tau and tau_2
 #'
 #' @param hmc_res A list containing the entry 'tau' normally output from the hamiltonian_mcmc function when metric_method is set to something that returns eigenvalues.
@@ -180,7 +224,26 @@ plot_ess <- function(hmc_res_list) {
     geom_line(size=1.2)
 }
 
-#' Plot Effective Step Size
+
+#' Plot Effective Sample Size per variable
+#'
+#' @param hmc_res_list A list of hmc result objects
+#' @export
+plot_ess_var <- function(hmc_res_list) {
+  require(ggplot2)
+
+  lst_ess <- lapply(hmc_lst, function(hmc_res) {
+    data.frame(ess=hmc_res$ess)
+  })
+
+  df_ess <- as.data.frame(do.call(rbind, lst_ess))
+  df_ess$Method <- rep(names(lst_ess), sapply(lst_ess, nrow))
+
+  ggplot(df_ess, aes(x=ess, col=Method, fill=Method)) + geom_density(alpha=0.5)
+}
+
+
+#' Plot Step Size
 #'
 #' @param hmc_res_list A list of hmc result objects
 #' @export
@@ -214,4 +277,44 @@ plot_esjd <- function(hmc_lst) {
 
   ggplot(esjd, aes(x=i, y=esjd, col=method)) + geom_point(alpha=0.2) + geom_smooth() +
     coord_cartesian(ylim = c(0, quantile(esjd$esjd, 0.99)))
+}
+
+
+#' Calculate the condition number, either based on the raw eigenvalues, or based on the regularized ones.
+#' Note: Currently the regularized method only supports the 'minmax' regularization method.
+#'
+#' @param hmc_res A hmc result objects containing eig_values and tau entries
+#' @param regularized Should the condition value be calculated based on regularized eigenvalues
+#' @param reg_method If regularized eigenvalues are used, which method has been used for regularization
+#' @export
+get_condition_number <- function(hmc_res, regularized=F, reg_method='minmax') {
+
+  #TODO: Assert that the hmc list contains eig_values, and if regularized that reg_method matches
+  if(regularized && reg_method=='minmax') {
+    get_df <- function(k) {
+      n <- ncol(hmc_res$eig_values)
+      z_raw <- hmc_res$eig_values[k,]
+      start_eigval <- ceiling(hmc_res$tau[k,1] * n)
+
+      z_shrunk <- z_raw
+      z_shrunk[1:start_eigval] <- z_shrunk[start_eigval]
+
+      tmp <- which((cumsum(z_shrunk) / sum(z_shrunk)) > hmc_res$tau[k,2])[1]
+      z_shrunk <- ifelse(z_shrunk >= z_shrunk[tmp], z_shrunk, z_shrunk[tmp])
+
+      z_df_shrunk <- data.frame(k=k, i=1:n, ev=z_shrunk)
+
+      return(z_df_shrunk)
+    }
+
+    n <- nrow(hmc_res$samples)
+    n_min <- which(!is.na(hmc_res$eig_values[,1]))[1]
+    dfs <- lapply(n_min:n, get_df)
+    z_df <- do.call(rbind, dfs)
+    return(aggregate(z_df$ev, by=list(z_df$k), FUN=max)$x/
+             aggregate(z_df$ev, by=list(z_df$k), FUN=min)$x)
+  } else {
+    apply(hmc_res$eig_values[!is.na(hmc_res$eig_values[,1]),], 1, max)/
+      apply(hmc_res$eig_values[!is.na(hmc_res$eig_values[,1]),], 1, min)
+  }
 }

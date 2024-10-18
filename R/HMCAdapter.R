@@ -11,23 +11,22 @@ HMCAdapter <- R6Class("HMCAdapter",
                             dual_adapter = NULL,
                             tmp_samples = NULL,
                             step_size = NULL,
+                            reg_method = NULL,
 
                             # Initialization method
-                            initialize = function(metric_method='welford', step_size, metric, metric_settings) {
+                            initialize = function(metric_method='welford', reg_method = 'none',
+                                                  step_size, metric, metric_settings) {
 
                               # Initialize the Dual Averaging Adapter
                               self$step_size = step_size
-                              self$dual_adapter = DualAveragingAdaptation$new(0.65, step_size, 0.2)
+                              self$dual_adapter = DualAveragingAdaptation$new(0.65, step_size, 0.01, 0.99)
 
                               self$metric_adapter <- DummyAdapter$new(metric)
                               self$count <- 0
                               self$metric_method = metric_method
 
                               self$metric_settings = metric_settings
-
-                              #self$metric_adapter <- switch("metric_method",
-                              #       "welford" = WelfordAdapter$new(samples),
-                              #       "ccipca" = CCIPCA_Adapter$new(samples, 20, 3))
+                              self$reg_method = reg_method
                             },
 
                             adapt_step = function(acceptance_prob) {
@@ -37,7 +36,7 @@ HMCAdapter <- R6Class("HMCAdapter",
                             # Method to update the statistics with a new multidimensional value
                             add_sample = function(new_value) {
 
-                              if(self$metric_method =='ccipca') {
+                              if(!self$metric_method =='welford') {
 
                                 if (self$count <= self$metric_settings$k) {
                                   new_mt <- matrix(new_value, nrow = 1)
@@ -54,13 +53,20 @@ HMCAdapter <- R6Class("HMCAdapter",
 
                                 } else if (self$count==self$metric_settings$k) {
 
-                                  self$metric_adapter = CCIPCA_Adapter$new(self$tmp_samples,
-                                                                           self$metric_settings$k,
-                                                                           3)
+                                  self$metric_adapter <- switch(self$metric_method,
+                                         "incpca" = IncPCA_Adapter$new(self$tmp_samples,
+                                                                        self$metric_settings$k,
+                                                                        3,
+                                                                       self$reg_method),
+                                         "ccipca" = CCIPCA_Adapter$new(self$tmp_samples,
+                                                                       self$metric_settings$k,
+                                                                       3,
+                                                                       self$reg_method)
+                                         )
 
                                   self$dual_adapter <- DualAveragingAdaptation$new(0.65,
                                                                                    self$step_size,
-                                                                                   0.2) #Reset dual averaging. Needed/useful?
+                                                                                   0.01, 0.99) #Reset dual averaging. Needed/useful?
 
                                 } else if (self$count>self$metric_settings$k) {
 
@@ -89,23 +95,25 @@ HMCAdapter <- R6Class("HMCAdapter",
                             },
 
                             sample_covariance = function() {
-                              if(self$metric_method =='ccipca' && self$count>self$metric_settings$k) {
-                                return(self$metric_adapter$sample_covariance(self$dual_adapter$get_tau()))
+                              if(self$metric_method %in% c('ccipca', 'incpca') && self$count>self$metric_settings$k) {
+                                return(self$metric_adapter$sample_covariance(self$dual_adapter$get_tau(),
+                                                                             self$dual_adapter$get_tau_2()))
                               } else {
                                 return(self$metric_adapter$sample_covariance())
                               }
                             },
 
                             metric = function() {
-                              if(self$metric_method =='ccipca' && self$count>self$metric_settings$k) {
-                                return(self$metric_adapter$metric(self$dual_adapter$get_tau()))
+                              if(self$metric_method %in% c('ccipca', 'incpca') && self$count>self$metric_settings$k) {
+                                return(self$metric_adapter$metric(self$dual_adapter$get_tau(),
+                                                                  self$dual_adapter$get_tau_2()))
                               } else {
                                 return(self$metric_adapter$metric())
                               }
                             },
 
                             get_eigvals = function() {
-                              if(self$metric_method =='ccipca' && self$count>self$metric_settings$k) {
+                              if(self$metric_method %in% c('ccipca', 'incpca') && self$count>self$metric_settings$k) {
                                 return(self$metric_adapter$get_eigvals())
                               } else {
                                 return(rep(NA, self$metric_settings$k))
@@ -118,6 +126,10 @@ HMCAdapter <- R6Class("HMCAdapter",
 
                             get_tau = function() {
                               return(self$dual_adapter$get_tau())
+                            },
+
+                            get_tau_2 = function() {
+                              return(self$dual_adapter$get_tau_2())
                             }
                           )
 )

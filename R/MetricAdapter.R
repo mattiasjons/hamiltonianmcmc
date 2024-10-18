@@ -72,8 +72,9 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                         pca_vectors = NULL,
                         xbar = NULL,
                         count = 0,
+                        reg_method = NULL,
 
-                        initialize = function(samples, k, l) {
+                        initialize = function(samples, k, l, reg_method='none') {
                           require(onlinePCA)
 
                           stopifnot("Number of observations must be > 1" = nrow(samples)>1)
@@ -85,6 +86,7 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                           self$pca_vectors <- pca$vectors[,1:k]
                           self$xbar <- colMeans(samples)
                           self$count <- nrow(samples)
+                          self$reg_method <- reg_method
                         },
 
                         # Method to update PCA with a new sample
@@ -108,47 +110,58 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                           self$count <- self$count + 1
                         },
 
-                        sample_covariance = function(beta = 0.5) {
-                          ## Non Linear Eigenvalue Regularization...
-                          #tmp <- which((cumsum(self$pca_values) / sum(self$pca_values)) > explained_variance)[1]
-                          #tmp2 <- which((cumsum(self$pca_values) / sum(self$pca_values)) < min_eigen)
-                          #if (length(tmp2) > 0) {
-                          #  tmp2 <- tmp2[length(tmp2)]
-                          #} else {
-                          #  tmp2 <- 1
-                          #}
+                        sample_covariance = function(beta = 0.5, tau_min = 0.01, tau_max = 0.99) {
 
-                          #lambda_shrunk <- ifelse(self$pca_values >= self$pca_values[tmp], self$pca_values, self$pca_values[tmp])
-                          #lambda_shrunk <- ifelse(lambda_shrunk > lambda_shrunk[tmp2], lambda_shrunk[tmp2], lambda_shrunk)
+                          switch (self$reg_method,
+                            'none' = {
+                              lambda_shrunk <- self$pca_values
+                              },
+                            'linear' = {
+                              lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
+                              },
+                            'minmax' = {
 
-                          ## Truncate 0 eigenvalues
-                          #lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
+                              start_eigval <- ceiling(tau_min * length(self$pca_values))
 
-                          ## Linear shrinking of eigenvalues
-                          lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
+                              lambda_shrunk <- self$pca_values
+                              lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
+
+                              tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau_max)[1]
+                              lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
+
+                              },
+                            'truncate' = {
+                              lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
+                              }
+                          )
 
                           metric_inv <- self$pca_vectors %*% diag(lambda_shrunk) %*% t(self$pca_vectors)
                           return(metric_inv)
                         },
 
-                        metric = function(beta = 0.5) {
-                          ## Non Linear Eigenvalue Regularization...
-                          #tmp <- which((cumsum(self$pca_values) / sum(self$pca_values)) > explained_variance)[1]
-                          #tmp2 <- which((cumsum(self$pca_values) / sum(self$pca_values)) < min_eigen)
-                          #if (length(tmp2) > 0) {
-                          #  tmp2 <- tmp2[length(tmp2)]
-                          #} else {
-                          #  tmp2 <- 1
-                          #}
+                        metric = function(beta = 0.5, tau_min = 0.01, tau_max = 0.99) {
+                          switch (self$reg_method,
+                                  'none' = {
+                                    lambda_shrunk <- self$pca_values
+                                  },
+                                  'linear' = {
+                                    lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
+                                  },
+                                  'minmax' = {
 
-                          #lambda_shrunk <- ifelse(self$pca_values >= self$pca_values[tmp], self$pca_values, self$pca_values[tmp])
-                          #lambda_shrunk <- ifelse(lambda_shrunk > lambda_shrunk[tmp2], lambda_shrunk[tmp2], lambda_shrunk)
+                                    start_eigval <- ceiling(tau_min * length(self$pca_values))
 
-                          ## Truncate 0 eigenvalues
-                          #lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
+                                    lambda_shrunk <- self$pca_values
+                                    lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
 
-                          ## Linear shrinking of eigenvalues
-                          lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
+                                    tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau_max)[1]
+                                    lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
+
+                                  },
+                                  'truncate' = {
+                                    lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
+                                  }
+                          )
 
                           metric <- self$pca_vectors %*% diag(1 / lambda_shrunk) %*% t(self$pca_vectors)
                           return(metric)
@@ -165,6 +178,125 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                       ),
                       private = list(
                       )
+)
+
+#' @export
+IncPCA_Adapter <- R6Class("IncPCA_Adapter",
+                          inherit = MetricAdapter,
+                          public = list(
+                            k = NULL, #Number of components
+                            l = NULL, #Amnesic factor
+                            init_done = FALSE,
+                            pca_values = NULL,
+                            pca_vectors = NULL,
+                            xbar = NULL,
+                            count = 0,
+                            reg_method = NULL,
+
+                            initialize = function(samples, k, l, reg_method='none') {
+                              require(onlinePCA)
+
+                              stopifnot("Number of observations must be > 1" = nrow(samples)>1)
+
+                              self$k = k
+                              self$l = l
+                              pca <- eigen(cov(samples))
+                              self$pca_values <- as.vector(pca$values)[1:k]
+                              self$pca_vectors <- pca$vectors[,1:k]
+                              self$xbar <- colMeans(samples)
+                              self$count <- nrow(samples)
+                              self$reg_method <- reg_method
+                            },
+
+                            # Method to update PCA with a new sample
+                            add_sample = function(new_sample) {
+                              #incRpca(lambda, U, x, n, f = 1/n, q = length(lambda), center, tol = 1e-7)
+                              new_sample <- as.vector(new_sample)
+                              self$xbar <- self$update_mean(self$xbar, new_sample, self$count)
+
+                              pca <- incRpca(lambda=self$pca_values, U=self$pca_vectors,
+                                             x=new_sample, n=self$count,
+                                             q = self$k, center = self$xbar,
+                                             f = 0)
+
+                              if (length(dim(pca$values))>1) {
+                                values <- pca$values[,1]
+                              } else {
+                                values <- pca$values
+                              }
+
+                              self$pca_values <- values
+                              self$pca_vectors <- pca$vectors
+                              self$count <- self$count + 1
+                            },
+
+                            sample_covariance = function(beta = 0.5, tau_min = 0.01, tau_max = 0.99) {
+                              switch (self$reg_method,
+                                      'none' = {
+                                        lambda_shrunk <- self$pca_values
+                                      },
+                                      'linear' = {
+                                        lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
+                                      },
+                                      'minmax' = {
+
+                                        start_eigval <- ceiling(tau_min * length(self$pca_values))
+
+                                        lambda_shrunk <- self$pca_values
+                                        lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
+
+                                        tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau_max)[1]
+                                        lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
+
+                                      },
+                                      'truncate' = {
+                                        lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
+                                      }
+                              )
+
+                              metric_inv <- self$pca_vectors %*% diag(lambda_shrunk) %*% t(self$pca_vectors)
+                              return(metric_inv)
+                            },
+
+                            metric = function(beta = 0.5, tau_min = 0.01, tau_max = 0.99) {
+                              switch (self$reg_method,
+                                      'none' = {
+                                        lambda_shrunk <- self$pca_values
+                                      },
+                                      'linear' = {
+                                        lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
+                                      },
+                                      'minmax' = {
+
+                                        start_eigval <- ceiling(tau_min * length(self$pca_values))
+
+                                        lambda_shrunk <- self$pca_values
+                                        lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
+
+                                        tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau_max)[1]
+                                        lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
+
+                                      },
+                                      'truncate' = {
+                                        lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
+                                      }
+                              )
+
+                              metric <- self$pca_vectors %*% diag(1 / lambda_shrunk) %*% t(self$pca_vectors)
+                              return(metric)
+                            },
+
+                            # Helper function to update the mean with a new sample
+                            update_mean = function(xbar, new_sample, n) {
+                              return(((n * xbar) + new_sample) / (n + 1))
+                            },
+
+                            get_eigvals = function() {
+                              return(self$pca_values)
+                            }
+                          ),
+                          private = list(
+                          )
 )
 
 #' @export
