@@ -43,7 +43,7 @@ library(glmnet) #Let's "cheat" to find good starting values.
 
 hmc_res <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 0.01)))[-1],
                             num_samples = 500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),
-                            metric_method = 'ccipca', metric_adapter_settings = list(k=50, reg_method='minmax'))
+                            metric_method = 'ccipca', metric_adapter_settings = list(k=130, reg_method='minmax'))
 
 hmc_res_inc <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 0.01)))[-1],
                             num_samples = 500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),
@@ -71,11 +71,8 @@ plot_step_size(hmc_lst)
 plot_eigenvalues_minmax_shrink(hmc_res, T)
 plot_eigenvalues_minmax_shrink(hmc_res_inc, T)
 
-
 plot_tau(hmc_res)
-plot(hmc_res$tau[,2])
-plot(-log(1/hmc_res_inc$tau[,2]-1), hmc_res_inc$step_sizes)
-
+plot(hmc_res$tau[,1])
 
 plot_leapfrog_steps(hmc_res_cov)
 plot_leapfrog_steps(hmc_res)
@@ -88,8 +85,8 @@ plot_ess_var(hmc_lst)
 plot_ess(hmc_lst)
 plot_esjd(hmc_lst)
 
-
-esjd <- data.frame(i = 1:(nrow(hmc_res$samples)-1), esjd=rowSums(diff(hmc_res$samples)^2))
-plot(hmc_res$energy[-1,3], esjd$esjd)
+plot_trace(hmc_lst)
 
 plot(get_condition_number(hmc_res, T))
+plot_esjd_potential(hmc_res)
+plot_esjd_trace(hmc_lst)

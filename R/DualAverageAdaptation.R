@@ -39,8 +39,8 @@ DualAveragingAdaptation <- R6Class("DualAveragingAdaptation",
                                        self$tau <- init_tau
                                        self$tau_2 <- init_tau_2
 
-                                       self$gamma_tau <- 0.15
-                                       self$t0_tau <- 30.0
+                                       self$gamma_tau <- 0.2 #0.3
+                                       self$t0_tau <- 10.0 #30
 
                                        # Initialize logit transformations of tau and tau_2
                                        self$logit_tau <- log(init_tau / (1 - init_tau))

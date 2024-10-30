@@ -239,7 +239,6 @@ IncPCA_Adapter <- R6Class("IncPCA_Adapter",
                                         lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
                                       },
                                       'minmax' = {
-
                                         start_eigval <- ceiling(tau_min * length(self$pca_values))
 
                                         lambda_shrunk <- self$pca_values

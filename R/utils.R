@@ -270,7 +270,10 @@ plot_step_size <- function(hmc_res_list) {
 #' @export
 plot_esjd <- function(hmc_lst) {
   esjd <- lapply(hmc_lst, function(hmc_res) {
-    data.frame(i = 1:(nrow(hmc_res$samples)-1), esjd=rowSums(diff(hmc_res$samples)^2))
+    mh_cond <- ifelse(exp(rowSums(hmc_res$energy[,3:4])-rowSums(hmc_res$energy[,1:2]))>1,
+                      1,
+                      exp(rowSums(hmc_res$energy[,3:4])-rowSums(hmc_res$energy[,1:2])))
+    data.frame(i = 1:(nrow(hmc_res$samples)-1), esjd=mh_cond[-1] * rowSums(diff(hmc_res$samples)^2))
   })
   esjd <- do.call(rbind, esjd)
   esjd$method <- rep(names(hmc_lst), sapply(hmc_lst, function(hmc_res) nrow(hmc_res$samples)-1))
@@ -318,3 +321,129 @@ get_condition_number <- function(hmc_res, regularized=F, reg_method='minmax') {
       apply(hmc_res$eig_values[!is.na(hmc_res$eig_values[,1]),], 1, min)
   }
 }
+
+
+
+#' Get regularized eigenvalues
+#' Note: Currently the regularized method only supports the 'minmax' regularization method.
+#'
+#' @param hmc_res A hmc result objects containing eig_values and tau entries.
+#' @param reg_method If regularized eigenvalues are used, which method has been used for regularization
+#' @export
+get_reg_eig <- function(hmc_res, reg_method='minmax') {
+
+  #TODO: Assert that the hmc list contains eig_values, and if regularized that reg_method matches
+  if(reg_method=='minmax') {
+    get_df <- function(k) {
+      n <- ncol(hmc_res$eig_values)
+      z_raw <- hmc_res$eig_values[k,]
+      start_eigval <- ceiling(hmc_res$tau[k,1] * n)
+
+      z_shrunk <- z_raw
+      z_shrunk[1:start_eigval] <- z_shrunk[start_eigval]
+
+      tmp <- which((cumsum(z_shrunk) / sum(z_shrunk)) > hmc_res$tau[k,2])[1]
+      z_shrunk <- ifelse(z_shrunk >= z_shrunk[tmp], z_shrunk, z_shrunk[tmp])
+
+      z_df_shrunk <- data.frame(k=k, i=1:n, ev=z_shrunk)
+
+      return(z_df_shrunk)
+    }
+
+    n <- nrow(hmc_res$samples)
+    n_min <- which(!is.na(hmc_res$eig_values[,1]))[1]
+    dfs <- lapply(n_min:n, get_df)
+    z_df <- do.call(rbind, dfs)
+    return(z_df)
+  } else {
+    return(NA)
+  }
+}
+
+
+#' Calculate Squared Jumping Distance
+#'
+#' @param hmc_res A hmc result objects containing energy and samples entries.
+#' @export
+get_esjd <- function(hmc_res) {
+  mh_cond <- ifelse(exp(rowSums(hmc_res$energy[,3:4])-rowSums(hmc_res$energy[,1:2]))>1,
+                    1,
+                    exp(rowSums(hmc_res$energy[,3:4])-rowSums(hmc_res$energy[,1:2])))
+  data.frame(i = 1:(nrow(hmc_res$samples)-1), esjd=mh_cond[-1] * rowSums(diff(hmc_res$samples)^2))
+}
+
+
+#' Plot Trace (sum of diagonal/eigenvalues of sample covariance matrix)
+#'
+#' @param hmc_lst A list of hmc result objects.
+#' @export
+plot_trace <- function(hmc_lst) {
+
+  traces <- lapply(hmc_lst, function(hmc_res) {
+    if (length(hmc_res$eig_values)==1) { #If length=1, eig_values contains a single NA entry.
+      trace_increment <- unlist(lapply(hmc_res$mass_matrices, function(M) sum(diag(solve(M)))))
+      data.frame(k = 1:length(trace_increment), trace=trace_increment)
+    } else {
+      reg_eig_df <- get_reg_eig(hmc_res, 'minmax')
+      reg_eig_df <- aggregate(reg_eig_df$ev, by=list(reg_eig_df$k), sum)
+      colnames(reg_eig_df) <- c('k', 'trace')
+      reg_eig_df
+    }
+  })
+
+  trace_df <- do.call(rbind, traces)
+  rownames(trace_df) <- NULL
+
+  trace_df$method <- rep(names(hmc_lst), unlist(lapply(traces, nrow)))
+
+  ggplot(trace_df, aes(x=k, y=trace, col=method, group=method)) + geom_line() +
+    coord_cartesian(ylim = c(0, quantile(trace_df$trace, 0.995))) +
+    scale_x_continuous(name='Step') +
+    scale_y_continuous(name='Trace') +
+    scale_color_discrete(name='Method')
+}
+
+#' Plot ESJD over Proposed Potential Energy
+#'
+#' @param hmc_res A hmc result object.
+#' @export
+plot_esjd_potential <- function(hmc_res) {
+  plot(hmc_res$energy[-1,3], get_esjd(hmc_res)$esjd,
+       col=rgb(((101:500)-101)/(500-101),0.3, 0.3), pch=16,
+       xlab='Potential Energy at Sample Proposal', ylab='ESJD')
+}
+
+
+#' Plot ESJD over Sample Covariance Matrix Trace
+#'
+#' @param hmc_lst A names list of hmc result objects.
+#' @export
+plot_esjd_trace <- function(hmc_lst) {
+  traces <- lapply(hmc_lst, function(hmc_res) {
+    if (length(hmc_res$eig_values)==1) { #If length=1, eig_values contains a single NA entry.
+      trace_increment <- unlist(lapply(hmc_res$mass_matrices, function(M) sum(diag(solve(M)))))
+      data.frame(k = 2:length(trace_increment), trace=trace_increment[-1], esjd=get_esjd(hmc_res)$esjd)
+    } else {
+      reg_eig_df <- get_reg_eig(hmc_res, 'minmax')
+      reg_eig_df <- aggregate(reg_eig_df$ev, by=list(reg_eig_df$k), sum)
+      colnames(reg_eig_df) <- c('k', 'trace')
+      tmp_esjd <- get_esjd(hmc_res)
+      reg_eig_df$esjd <- tmp_esjd[(nrow(tmp_esjd)-nrow(reg_eig_df)+1):nrow(tmp_esjd), 'esjd']
+      reg_eig_df
+    }
+  })
+
+  trace_df <- do.call(rbind, traces)
+  rownames(trace_df) <- NULL
+
+  trace_df$method <- rep(names(hmc_lst), unlist(lapply(traces, nrow)))
+
+  ggplot(trace_df, aes(x=trace, y=esjd, col=k)) + geom_point() +
+           coord_cartesian(xlim = c(quantile(trace_df$trace, 0.001),
+                                    quantile(trace_df$trace, 0.995))) +
+    facet_grid(trace_df$method~.) +
+    scale_x_continuous(name='Step') +
+    scale_y_continuous(name='Trace')
+}
+
+
