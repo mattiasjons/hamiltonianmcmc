@@ -442,8 +442,8 @@ plot_esjd_trace <- function(hmc_lst) {
            coord_cartesian(xlim = c(quantile(trace_df$trace, 0.001),
                                     quantile(trace_df$trace, 0.995))) +
     facet_grid(trace_df$method~.) +
-    scale_x_continuous(name='Step') +
-    scale_y_continuous(name='Trace')
+    scale_x_continuous(expression(paste("Tr(", M^-1, ") = ", Sigma['i=1']^k, lambda[i]))) +
+    scale_y_continuous(name='ESJD')
 }
 
 
