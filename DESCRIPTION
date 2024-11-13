@@ -11,5 +11,6 @@ LazyData: true
 Imports:
     MASS,
     R6,
-    incrementalpca
+    cmdstanr,
+    onlinePCA
 RoxygenNote: 7.3.2

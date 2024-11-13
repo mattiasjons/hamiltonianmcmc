@@ -2,13 +2,13 @@
 % Please edit documentation in R/utils.R
 \name{plot_esjd_trace}
 \alias{plot_esjd_trace}
-\title{Plot ESJD over Proposed Potential Energy}
+\title{Plot ESJD over Sample Covariance Matrix Trace}
 \usage{
 plot_esjd_trace(hmc_lst)
 }
 \arguments{
-\item{hmc_res}{A hmc result object.}
+\item{hmc_lst}{A names list of hmc result objects.}
 }
 \description{
-Plot ESJD over Proposed Potential Energy
+Plot ESJD over Sample Covariance Matrix Trace
 }

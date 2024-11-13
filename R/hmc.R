@@ -146,11 +146,17 @@ hamiltonian_mcmc <- function(initial_state,
 
   reg_method <- 'none'
   eg_val <- NA
+  eg_vec <- NA
+
   if (metric_method %in% c('ccipca', 'incpca')) {
     library(onlinePCA)
     eg_val <- matrix(nrow = num_samples, ncol=metric_adapter_settings$k)
+    eg_vec <- list()
 
     if (!is.null(metric_adapter_settings$reg_method)) {
+      cat('Regularization method set to ')
+      cat(metric_adapter_settings$reg_method)
+      cat('\r\n')
       reg_method <- metric_adapter_settings$reg_method
     }
   }
@@ -271,6 +277,7 @@ hamiltonian_mcmc <- function(initial_state,
     if (metric_method %in% c('ccipca', 'incpca')) {
       tau_hist[i, ] <- c(adapter$get_tau(), adapter$get_tau_2())
       eg_val[i,] <- adapter$get_eigvals()
+      eg_vec[[i]] <- adapter$get_eigvecs()
     }
 
     i = i + 1
@@ -291,7 +298,8 @@ hamiltonian_mcmc <- function(initial_state,
               ess = ess,
               ess_s = ess_s,
               tau = tau_hist,
-              eig_values = eg_val
+              eig_values = eg_val,
+              eig_vectors = eg_vec
               ))
 }
 

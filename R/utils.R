@@ -438,7 +438,7 @@ plot_esjd_trace <- function(hmc_lst) {
 
   trace_df$method <- rep(names(hmc_lst), unlist(lapply(traces, nrow)))
 
-  ggplot(trace_df, aes(x=trace, y=esjd, col=k)) + geom_point() +
+  ggplot(trace_df, aes(x=trace, y=sqrt(esjd), col=k)) + geom_point() +
            coord_cartesian(xlim = c(quantile(trace_df$trace, 0.001),
                                     quantile(trace_df$trace, 0.995))) +
     facet_grid(trace_df$method~.) +
@@ -447,3 +447,28 @@ plot_esjd_trace <- function(hmc_lst) {
 }
 
 
+#' Get regularized eigenvalues
+#' Note: Currently the regularized method only supports the 'minmax' regularization method.
+#'
+#' @param eig_vals Eigenvalues
+#' @param tau_min tau_min
+#' @param tau_max tau_max
+#' @param reg_method If regularized eigenvalues are used, which method has been used for regularization
+#' @export
+regularize_eigvals <- function(eig_vals, tau_min, tau_max, reg_method='minmax') {
+
+  #TODO: Assert that the hmc list contains eig_values, and if regularized that reg_method matches
+  if(reg_method=='minmax') {
+
+    start_eigval <- ceiling(tau_min * length(eig_vals))
+    z_shrunk <- eig_vals
+    z_shrunk[1:start_eigval] <- z_shrunk[start_eigval]
+
+    tmp <- which((cumsum(z_shrunk) / sum(z_shrunk)) > tau_max)[1]
+    z_shrunk <- ifelse(z_shrunk >= z_shrunk[tmp], z_shrunk, z_shrunk[tmp])
+    z_shrunk
+
+  } else {
+    return(NA)
+  }
+}

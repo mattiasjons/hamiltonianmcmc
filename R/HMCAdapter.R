@@ -96,8 +96,8 @@ HMCAdapter <- R6Class("HMCAdapter",
 
                             sample_covariance = function() {
                               if(self$metric_method %in% c('ccipca', 'incpca') && self$count>self$metric_settings$k) {
-                                return(self$metric_adapter$sample_covariance(self$dual_adapter$get_tau(),
-                                                                             self$dual_adapter$get_tau_2()))
+                                return(self$metric_adapter$sample_covariance(tau_min = self$dual_adapter$get_tau(),
+                                                                             tau_max = self$dual_adapter$get_tau_2()))
                               } else {
                                 return(self$metric_adapter$sample_covariance())
                               }
@@ -105,8 +105,8 @@ HMCAdapter <- R6Class("HMCAdapter",
 
                             metric = function() {
                               if(self$metric_method %in% c('ccipca', 'incpca') && self$count>self$metric_settings$k) {
-                                return(self$metric_adapter$metric(self$dual_adapter$get_tau(),
-                                                                  self$dual_adapter$get_tau_2()))
+                                return(self$metric_adapter$metric(tau_min = self$dual_adapter$get_tau(),
+                                                                  tau_max = self$dual_adapter$get_tau_2()))
                               } else {
                                 return(self$metric_adapter$metric())
                               }
@@ -117,6 +117,14 @@ HMCAdapter <- R6Class("HMCAdapter",
                                 return(self$metric_adapter$get_eigvals())
                               } else {
                                 return(rep(NA, self$metric_settings$k))
+                              }
+                            },
+
+                            get_eigvecs = function() {
+                              if(self$metric_method %in% c('ccipca', 'incpca') && self$count>self$metric_settings$k) {
+                                return(self$metric_adapter$get_eigvecs())
+                              } else {
+                                return(NA)
                               }
                             },
 

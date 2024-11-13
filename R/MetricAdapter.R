@@ -105,13 +105,14 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                           } else {
                             values <- pca$values
                           }
+
                           self$pca_values <- values
                           self$pca_vectors <- pca$vectors
                           self$count <- self$count + 1
                         },
 
                         sample_covariance = function(beta = 0.5, tau_min = 0.01, tau_max = 0.99) {
-
+                          lambda_shrunk <- NA
                           switch (self$reg_method,
                             'none' = {
                               lambda_shrunk <- self$pca_values
@@ -140,6 +141,7 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                         },
 
                         metric = function(beta = 0.5, tau_min = 0.01, tau_max = 0.99) {
+                          lambda_shrunk <- NA
                           switch (self$reg_method,
                                   'none' = {
                                     lambda_shrunk <- self$pca_values
@@ -174,6 +176,10 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
 
                         get_eigvals = function() {
                           return(self$pca_values)
+                        },
+
+                        get_eigvecs = function() {
+                          return(self$pca_vectors)
                         }
                       ),
                       private = list(
@@ -231,6 +237,7 @@ IncPCA_Adapter <- R6Class("IncPCA_Adapter",
                             },
 
                             sample_covariance = function(beta = 0.5, tau_min = 0.01, tau_max = 0.99) {
+                              lambda_shrunk <- NA
                               switch (self$reg_method,
                                       'none' = {
                                         lambda_shrunk <- self$pca_values
@@ -258,6 +265,7 @@ IncPCA_Adapter <- R6Class("IncPCA_Adapter",
                             },
 
                             metric = function(beta = 0.5, tau_min = 0.01, tau_max = 0.99) {
+                              lambda_shrunk <- NA
                               switch (self$reg_method,
                                       'none' = {
                                         lambda_shrunk <- self$pca_values
@@ -292,6 +300,10 @@ IncPCA_Adapter <- R6Class("IncPCA_Adapter",
 
                             get_eigvals = function() {
                               return(self$pca_values)
+                            },
+
+                            get_eigvecs = function() {
+                              return(self$pca_vectors)
                             }
                           ),
                           private = list(
