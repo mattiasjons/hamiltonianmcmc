@@ -7,23 +7,6 @@ color_scheme_set("brightblue")
 #check_cmdstan_toolchain()
 #install_cmdstan(cores = 2)
 
-file <- file.path("./examples/normal.stan")
-mod <- cmdstan_model(file)
-
-data_list <- list(N = 10, y = rnorm(10, 0, 1))
-
-hmc_res <- hamiltonian_mcmc(c(0, 1), 2000, 0.2, 10, stan_file = file,
-                            stan_data = data_list, metric = diag(2),
-                            metric_method = 'ccipca', adaptive_stepsize = T)
-
-mcmc_intervals(hmc_res$samples[1000:2000,])
-mcmc_trace(hmc_res$samples[500:2000,])
-plot(log(hmc_res$step_sizes))
-
-plot_leapfrog_steps(hmc_res)
-
-
-
 
 eg_fn <- function() rexp(1)
 df <- generate_eig_df(501, 0.9, 25, eg_fn)
@@ -159,6 +142,18 @@ size_slices <- sapply(seq(0.981, 0.999, 0.0002), function(x) {
 
 plot(x=seq(0.981, 0.999, 0.0002), y=esjd_slices, pch=16)
 
+test <- function(tau_max, i) {
+  sum(diag(hmc_res$eig_vectors[[i]] %*% diag(regularize_eigvals(hmc_res$eig_values[i,], 0.001, tau_max)) %*% t(hmc_res$eig_vectors[[i]]) %*% hmc_res$eig_vectors[[i]] %*% diag(1/regularize_eigvals(hmc_res$eig_values[i,], 0.001, tau_max)) %*% t(hmc_res$eig_vectors[[i]]))) - log(prod(1/regularize_eigvals(hmc_res$eig_values[i,], 0.001, tau_max)))
+}
 
+x=runif(50, 0.9, 0.98)
+y=sample(400:500, 50, T)
+mygrid <- expand.grid(x=x, y=y)
+test_vec <- mapply(test, mygrid$x, mygrid$y)
 
+library(plotly)
+fig <- plot_ly(x = x, y = y, z = t(matrix(test_vec, ncol=50))) %>% add_surface()
+fig
 
+plot(mygrid$x, test_vec)
+optim(c(0.9, 450), test, )
