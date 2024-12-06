@@ -142,18 +142,3 @@ size_slices <- sapply(seq(0.981, 0.999, 0.0002), function(x) {
 
 plot(x=seq(0.981, 0.999, 0.0002), y=esjd_slices, pch=16)
 
-test <- function(tau_max, i) {
-  sum(diag(hmc_res$eig_vectors[[i]] %*% diag(regularize_eigvals(hmc_res$eig_values[i,], 0.001, tau_max)) %*% t(hmc_res$eig_vectors[[i]]) %*% hmc_res$eig_vectors[[i]] %*% diag(1/regularize_eigvals(hmc_res$eig_values[i,], 0.001, tau_max)) %*% t(hmc_res$eig_vectors[[i]]))) - log(prod(1/regularize_eigvals(hmc_res$eig_values[i,], 0.001, tau_max)))
-}
-
-x=runif(50, 0.9, 0.98)
-y=sample(400:500, 50, T)
-mygrid <- expand.grid(x=x, y=y)
-test_vec <- mapply(test, mygrid$x, mygrid$y)
-
-library(plotly)
-fig <- plot_ly(x = x, y = y, z = t(matrix(test_vec, ncol=50))) %>% add_surface()
-fig
-
-plot(mygrid$x, test_vec)
-optim(c(0.9, 450), test, )
