@@ -232,15 +232,28 @@ hamiltonian_mcmc <- function(initial_state,
         }
       }
 
-      adapter$adapt_step(acceptance_ratio)
+      #eigval_q <- adapter$get_eigvals()/sum(adapter$get_eigvals())
+      #cat(eigval_q[which.min(sapply(eigval_q, function(q) {
+      #  sum(diag(adapter$metric_adapter$sample_covariance(tau=q) %*% adapter$metric_adapter$metric(tau=q))) - log(prod(adapter$metric_adapter$get_reg_eigvals(tau=q)))
+      #}))])
+      #cat('\r\n')
+
+      ll_sigma = sum(diag(adapter$sample_covariance() %*% adapter$metric())) - log(prod(adapter$get_reg_eigvals()))
+      cat('ll_sigma: ')
+      cat(ll_sigma)
+      cat('\r\n')
+      adapter$adapt_step(acceptance_ratio, ll_sigma)
       cat(adapter$get_epsilon())
       cat('\r\n')
 
       U <- stats::runif(1)
 
       if (!is.na(proposed_energy) && !is.na(acceptance_ratio) && U < acceptance_ratio) {
-
         adapter$add_sample(proposed_state)
+        cat('Tau: ')
+        cat(adapter$get_tau())
+        cat('\r\n')
+
         metric <- adapter$metric()
         metric_inv <- adapter$sample_covariance()
 

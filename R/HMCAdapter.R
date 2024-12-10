@@ -19,7 +19,7 @@ HMCAdapter <- R6Class("HMCAdapter",
 
                               # Initialize the Dual Averaging Adapter
                               self$step_size = step_size
-                              self$dual_adapter = DualAveragingAdaptation$new(0.65, step_size, 0.01, 0.99)
+                              self$dual_adapter = DualAveragingAdaptation$new(0.65, step_size, 0.99)
 
                               self$metric_adapter <- DummyAdapter$new(metric)
                               self$count <- 0
@@ -29,8 +29,8 @@ HMCAdapter <- R6Class("HMCAdapter",
                               self$reg_method = reg_method
                             },
 
-                            adapt_step = function(acceptance_prob) {
-                              self$dual_adapter$adapt_step(acceptance_prob)
+                            adapt_step = function(acceptance_prob, ll) {
+                              self$dual_adapter$adapt_step(acceptance_prob, ll)
                             },
 
                             # Method to update the statistics with a new multidimensional value
@@ -66,7 +66,7 @@ HMCAdapter <- R6Class("HMCAdapter",
 
                                   self$dual_adapter <- DualAveragingAdaptation$new(0.65,
                                                                                    self$step_size,
-                                                                                   0.01, 0.99) #Reset dual averaging. Needed/useful?
+                                                                                   0.99) #Reset dual averaging. Needed/useful?
 
                                 } else if (self$count>self$metric_settings$k) {
 
@@ -96,8 +96,7 @@ HMCAdapter <- R6Class("HMCAdapter",
 
                             sample_covariance = function() {
                               if(self$metric_method %in% c('ccipca', 'incpca') && self$count>self$metric_settings$k) {
-                                return(self$metric_adapter$sample_covariance(tau_min = self$dual_adapter$get_tau(),
-                                                                             tau_max = self$dual_adapter$get_tau_2()))
+                                return(self$metric_adapter$sample_covariance(tau = self$dual_adapter$get_tau()))
                               } else {
                                 return(self$metric_adapter$sample_covariance())
                               }
@@ -105,8 +104,7 @@ HMCAdapter <- R6Class("HMCAdapter",
 
                             metric = function() {
                               if(self$metric_method %in% c('ccipca', 'incpca') && self$count>self$metric_settings$k) {
-                                return(self$metric_adapter$metric(tau_min = self$dual_adapter$get_tau(),
-                                                                  tau_max = self$dual_adapter$get_tau_2()))
+                                return(self$metric_adapter$metric(tau = self$dual_adapter$get_tau()))
                               } else {
                                 return(self$metric_adapter$metric())
                               }
@@ -118,6 +116,10 @@ HMCAdapter <- R6Class("HMCAdapter",
                               } else {
                                 return(rep(NA, self$metric_settings$k))
                               }
+                            },
+
+                            get_reg_eigvals = function() {
+                              return(self$metric_adapter$get_reg_eigvals(tau = self$dual_adapter$get_tau()))
                             },
 
                             get_eigvecs = function() {

@@ -26,7 +26,7 @@ library(glmnet) #Let's "cheat" to find good starting values.
 
 hmc_res <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 0.01)))[-1],
                             num_samples = 500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),
-                            metric_method = 'ccipca', metric_adapter_settings = list(k=130, reg_method='minmax'))
+                            metric_method = 'ccipca', metric_adapter_settings = list(k=50, reg_method='minmax'))
 
 hmc_res_inc <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 0.01)))[-1],
                             num_samples = 500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),

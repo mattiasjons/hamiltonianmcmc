@@ -42,7 +42,7 @@ WelfordAdapter <- R6Class("WelfordAdapter",
                             },
 
                             # Method to return sample variance
-                            sample_covariance = function() {
+                            sample_covariance = function(tau=0.99) {
                               stopifnot('Adapter must have been initialized with a dataset with >1 observation' = self$count>1)
                               sample_covariance <- self$M2 / (self$count - 1)
                               sample_covariance <- (self$count / (self$count + 5.0)) * sample_covariance +
@@ -50,13 +50,17 @@ WelfordAdapter <- R6Class("WelfordAdapter",
                               return(sample_covariance)
                             },
 
-                            metric = function() {
+                            metric = function(tau=0.99) {
                               stopifnot('Adapter must have been initialized with a dataset with >1 observation' = self$count>1)
                               covar <- self$sample_covariance()
                               metric_inv <- (self$count / (self$count + 5.0)) * covar +
                                 1e-3 * (5.0 / (self$count + 5.0)) * diag(nrow(covar))
                               metric <- solve(metric_inv)
                               return(metric)
+                            },
+
+                            get_reg_eigvals = function(tau = 0.99) {
+                              return(diag(self$sample_covariance())) #Need to return something...
                             }
                           )
                           )
@@ -81,7 +85,11 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
 
                           self$k = k
                           self$l = l
+                          cat('Baseline eigen')
+                          cat('\r\n')
                           pca <- eigen(cov(samples))
+                          cat('Baseline eigen done')
+                          cat('\r\n')
                           self$pca_values <- as.vector(pca$values)[1:k]
                           self$pca_vectors <- pca$vectors[,1:k]
                           self$xbar <- colMeans(samples)
@@ -111,7 +119,7 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                           self$count <- self$count + 1
                         },
 
-                        sample_covariance = function(beta = 0.5, tau_min = 0.01, tau_max = 0.99) {
+                        sample_covariance = function(beta = 0.5, tau = 0.99) {
                           lambda_shrunk <- NA
                           switch (self$reg_method,
                             'none' = {
@@ -122,15 +130,15 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                               },
                             'minmax' = {
 
-                              start_eigval <- ceiling(tau_min * length(self$pca_values))
+                              #start_eigval <- ceiling(tau_min * length(self$pca_values))
 
                               lambda_shrunk <- self$pca_values
-                              lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
-
-                              tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau_max)[1]
-                              lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
-
-                              },
+                              #lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
+                              if (tau<1) {
+                                tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
+                                lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
+                              }
+                            },
                             'truncate' = {
                               lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
                               }
@@ -140,7 +148,7 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                           return(metric_inv)
                         },
 
-                        metric = function(beta = 0.5, tau_min = 0.01, tau_max = 0.99) {
+                        metric = function(beta = 0.5, tau = 0.99) {
                           lambda_shrunk <- NA
                           switch (self$reg_method,
                                   'none' = {
@@ -151,14 +159,14 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                                   },
                                   'minmax' = {
 
-                                    start_eigval <- ceiling(tau_min * length(self$pca_values))
+                                    #start_eigval <- ceiling(tau_min * length(self$pca_values))
 
                                     lambda_shrunk <- self$pca_values
-                                    lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
-
-                                    tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau_max)[1]
-                                    lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
-
+                                    #lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
+                                    if (tau<1) {
+                                      tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
+                                      lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
+                                    }
                                   },
                                   'truncate' = {
                                     lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
@@ -176,6 +184,34 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
 
                         get_eigvals = function() {
                           return(self$pca_values)
+                        },
+
+                        get_reg_eigvals = function(beta = 0.5, tau = 0.99) {
+                          lambda_shrunk <- NA
+                          switch (self$reg_method,
+                                  'none' = {
+                                    lambda_shrunk <- self$pca_values
+                                  },
+                                  'linear' = {
+                                    lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
+                                  },
+                                  'minmax' = {
+
+                                    #start_eigval <- ceiling(tau_min * length(self$pca_values))
+
+                                    lambda_shrunk <- self$pca_values
+                                    #lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
+                                    if (tau<1) {
+                                      tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
+                                      lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
+                                    }
+
+                                  },
+                                  'truncate' = {
+                                    lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
+                                  }
+                          )
+                          return(lambda_shrunk)
                         },
 
                         get_eigvecs = function() {
@@ -236,7 +272,7 @@ IncPCA_Adapter <- R6Class("IncPCA_Adapter",
                               self$count <- self$count + 1
                             },
 
-                            sample_covariance = function(beta = 0.5, tau_min = 0.01, tau_max = 0.99) {
+                            sample_covariance = function(beta = 0.5, tau = 0.99) {
                               lambda_shrunk <- NA
                               switch (self$reg_method,
                                       'none' = {
@@ -246,12 +282,12 @@ IncPCA_Adapter <- R6Class("IncPCA_Adapter",
                                         lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
                                       },
                                       'minmax' = {
-                                        start_eigval <- ceiling(tau_min * length(self$pca_values))
+                                        #start_eigval <- ceiling(tau_min * length(self$pca_values))
 
                                         lambda_shrunk <- self$pca_values
-                                        lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
+                                        #lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
 
-                                        tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau_max)[1]
+                                        tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
                                         lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
 
                                       },
@@ -264,7 +300,7 @@ IncPCA_Adapter <- R6Class("IncPCA_Adapter",
                               return(metric_inv)
                             },
 
-                            metric = function(beta = 0.5, tau_min = 0.01, tau_max = 0.99) {
+                            metric = function(beta = 0.5, tau = 0.99) {
                               lambda_shrunk <- NA
                               switch (self$reg_method,
                                       'none' = {
@@ -275,12 +311,12 @@ IncPCA_Adapter <- R6Class("IncPCA_Adapter",
                                       },
                                       'minmax' = {
 
-                                        start_eigval <- ceiling(tau_min * length(self$pca_values))
+                                        #start_eigval <- ceiling(tau_min * length(self$pca_values))
 
                                         lambda_shrunk <- self$pca_values
-                                        lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
+                                        #lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
 
-                                        tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau_max)[1]
+                                        tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
                                         lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
 
                                       },
@@ -300,6 +336,33 @@ IncPCA_Adapter <- R6Class("IncPCA_Adapter",
 
                             get_eigvals = function() {
                               return(self$pca_values)
+                            },
+
+                            get_reg_eigvals = function(beta = 0.5, tau = 0.99) {
+                              lambda_shrunk <- NA
+                              switch (self$reg_method,
+                                      'none' = {
+                                        lambda_shrunk <- self$pca_values
+                                      },
+                                      'linear' = {
+                                        lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
+                                      },
+                                      'minmax' = {
+
+                                        #start_eigval <- ceiling(tau_min * length(self$pca_values))
+
+                                        lambda_shrunk <- self$pca_values
+                                        #lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
+
+                                        tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
+                                        lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
+
+                                      },
+                                      'truncate' = {
+                                        lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
+                                      }
+                              )
+                              return(lambda_shrunk)
                             },
 
                             get_eigvecs = function() {
@@ -326,12 +389,16 @@ DummyAdapter <- R6Class("DummyAdapter",
                             },
 
                             # Method to return sample variance
-                            sample_covariance = function() {
+                            sample_covariance = function(tau=0.99) {
                               return(solve(self$metric_var))
                             },
 
-                            metric = function() {
+                            metric = function(tau=0.99) {
                               return(self$metric_var)
+                            },
+
+                            get_reg_eigvals = function(beta = 0.5, tau = 0.99) {
+                              return(1)
                             }
                           )
 )
