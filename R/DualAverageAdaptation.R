@@ -10,7 +10,7 @@ DualAveragingAdaptation <- R6Class("DualAveragingAdaptation",
                                      log_epsilon_bar = NULL,
                                      h_bar_epsilon = NULL,
                                      adapt_epsilon_counter = NULL,
-                                     target_accept_prob = NULL
+                                     target_accept_prob = NULL,
 
                                      initialize = function(target_accept_prob, init_epsilon) {
                                        # Dual averaging constants (defaults similar to Stan)
@@ -38,6 +38,10 @@ DualAveragingAdaptation <- R6Class("DualAveragingAdaptation",
                                      },
 
                                      adapt_step = function(accept_prob) {
+                                       if (is.na(accept_prob)) {
+                                         accept_prob <- 0
+                                       }
+
                                        if (accept_prob > 1) {
                                          accept_prob <- 1
                                        }

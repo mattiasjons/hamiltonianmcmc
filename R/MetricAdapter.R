@@ -77,6 +77,7 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                         xbar = NULL,
                         count = 0,
                         reg_method = NULL,
+                        total_trace = NULL,
 
                         initialize = function(samples, k, l, reg_method='none') {
                           require(onlinePCA)
@@ -91,6 +92,7 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                           cat('Baseline eigen done')
                           cat('\r\n')
                           self$pca_values <- as.vector(pca$values)[1:k]
+                          self$total_trace <- sum(self$pca_values)
                           self$pca_vectors <- pca$vectors[,1:k]
                           self$xbar <- colMeans(samples)
                           self$count <- nrow(samples)
@@ -106,7 +108,7 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                                         q = self$k, center = self$xbar,
                                         #l = min(self$l * 0.995^(self$count-1), self$count))
                                         #l = min(4, self$count))
-                                        l = 0)
+                                        l = 3)
 
                           if (length(dim(pca$values))>1) {
                             values <- pca$values[,1]
@@ -114,6 +116,7 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                             values <- pca$values
                           }
 
+                          values <- values * (sum(self$pca_values)/sum(values))
                           self$pca_values <- values
                           self$pca_vectors <- pca$vectors
                           self$count <- self$count + 1
@@ -131,13 +134,12 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                             'minmax' = {
 
                               #start_eigval <- ceiling(tau_min * length(self$pca_values))
-
+                              tau <- min(tau, 0.999999999)
+                              tau <- max(tau, 0.00001)
                               lambda_shrunk <- self$pca_values
                               #lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
-                              if (tau<1) {
-                                tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
-                                lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
-                              }
+                              tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
+                              lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
                             },
                             'truncate' = {
                               lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
@@ -160,13 +162,12 @@ CCIPCA_Adapter <- R6Class("CCIPCA_Adapter",
                                   'minmax' = {
 
                                     #start_eigval <- ceiling(tau_min * length(self$pca_values))
-
+                                    tau <- min(tau, 0.999999999)
+                                    tau <- max(tau, 0.00001)
                                     lambda_shrunk <- self$pca_values
                                     #lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
-                                    if (tau<1) {
-                                      tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
-                                      lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
-                                    }
+                                    tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
+                                    lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
                                   },
                                   'truncate' = {
                                     lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
@@ -259,7 +260,7 @@ IncPCA_Adapter <- R6Class("IncPCA_Adapter",
                               pca <- incRpca(lambda=self$pca_values, U=self$pca_vectors,
                                              x=new_sample, n=self$count,
                                              q = self$k, center = self$xbar,
-                                             f = 0)
+                                             f = 0.01)
 
                               if (length(dim(pca$values))>1) {
                                 values <- pca$values[,1]
@@ -282,14 +283,11 @@ IncPCA_Adapter <- R6Class("IncPCA_Adapter",
                                         lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
                                       },
                                       'minmax' = {
-                                        #start_eigval <- ceiling(tau_min * length(self$pca_values))
-
                                         lambda_shrunk <- self$pca_values
-                                        #lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
-
-                                        tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
-                                        lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
-
+                                        if (tau < 1) {
+                                          tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
+                                          lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
+                                        }
                                       },
                                       'truncate' = {
                                         lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
@@ -310,15 +308,11 @@ IncPCA_Adapter <- R6Class("IncPCA_Adapter",
                                         lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
                                       },
                                       'minmax' = {
-
-                                        #start_eigval <- ceiling(tau_min * length(self$pca_values))
-
                                         lambda_shrunk <- self$pca_values
-                                        #lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
-
-                                        tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
-                                        lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
-
+                                        if (tau < 1) {
+                                          tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
+                                          lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
+                                        }
                                       },
                                       'truncate' = {
                                         lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])
@@ -348,15 +342,11 @@ IncPCA_Adapter <- R6Class("IncPCA_Adapter",
                                         lambda_shrunk <- (1 - beta) * self$pca_values + beta * mean(self$pca_values)
                                       },
                                       'minmax' = {
-
-                                        #start_eigval <- ceiling(tau_min * length(self$pca_values))
-
                                         lambda_shrunk <- self$pca_values
-                                        #lambda_shrunk[1:start_eigval] <- lambda_shrunk[start_eigval]
-
-                                        tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
-                                        lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
-
+                                        if (tau < 1) {
+                                          tmp <- which((cumsum(lambda_shrunk) / sum(lambda_shrunk)) > tau)[1]
+                                          lambda_shrunk <- ifelse(lambda_shrunk >= lambda_shrunk[tmp], lambda_shrunk, lambda_shrunk[tmp])
+                                        }
                                       },
                                       'truncate' = {
                                         lambda_shrunk <- ifelse(self$pca_values > 0, self$pca_values, self$pca_values[self$pca_values>0])

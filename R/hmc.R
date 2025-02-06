@@ -23,29 +23,41 @@ leapfrog_integration <- function(current_state, momentum,
   states = vector("list", num_steps + 1)
   momenta = vector("list", num_steps + 2)
 
-  proposed_momentum <- momentum + 0.5 * c(step_size) * as.numeric(stan_obj$grad_log_prob(current_state))
-  proposed_state <- current_state + c(step_size) * M %*% proposed_momentum
+  tryCatch(
+    {
+      proposed_momentum <- momentum + 0.5 * c(step_size) * as.numeric(stan_obj$grad_log_prob(current_state, jacobian=T))
+      #proposed_momentum <- momentum + 0.5 * c(step_size) * as.numeric(stan_obj$grad_log_prob(current_state, jacobian=T))
+      proposed_state <- current_state + c(step_size) * M %*% proposed_momentum
 
-  states[[1]] <- c(current_state)
-  momenta[[1]] <- c(proposed_momentum)
+      states[[1]] <- c(current_state)
+      momenta[[1]] <- c(proposed_momentum)
 
-  for (j in 1:num_steps) {
-    if(any(is.na(proposed_state)) | any(is.na(proposed_momentum))) {
+      for (j in 1:num_steps) {
+        if(any(is.na(proposed_state)) | any(is.na(proposed_momentum))) {
+          return(list(diverge = T))
+        }
+        proposed_momentum <- proposed_momentum + c(step_size) * as.numeric(stan_obj$grad_log_prob(proposed_state, jacobian=T))
+        proposed_state <- proposed_state + c(step_size) * M %*% proposed_momentum
+
+        states[[j + 1]] <- c(proposed_state)
+        momenta[[j + 1]] <- c(proposed_momentum)
+      }
+
+      #final_grad <- as.numeric(stan_obj$grad_log_prob(proposed_state, jacobian=T))
+      final_grad <- as.numeric(stan_obj$grad_log_prob(proposed_state, jacobian=T))
+      proposed_momentum <- proposed_momentum + 0.5 * c(step_size) * final_grad
+      momenta[[num_steps + 2]] <- c(proposed_momentum)
+      return(list(diverge = F, proposed_state = proposed_state, proposed_momentum = proposed_momentum,
+                  gradient = final_grad, states = states, momenta = momenta))
+    },
+    error = function(cond) {
+      cat('divergence!')
+      cat('\r\n')
+      message(conditionMessage(cond))
+      cat('\r\n')
       return(list(diverge = T))
     }
-    proposed_momentum <- proposed_momentum + c(step_size) * as.numeric(stan_obj$grad_log_prob(proposed_state))
-    proposed_state <- proposed_state + c(step_size) * M %*% proposed_momentum
-
-    states[[j + 1]] <- c(proposed_state)
-    momenta[[j + 1]] <- c(proposed_momentum)
-  }
-
-  final_grad <- as.numeric(stan_obj$grad_log_prob(proposed_state))
-  proposed_momentum <- proposed_momentum + 0.5 * c(step_size) * final_grad
-  momenta[[num_steps + 2]] <- c(proposed_momentum)
-
-  return(list(diverge = F, proposed_state = proposed_state, proposed_momentum = proposed_momentum,
-              gradient = final_grad, states = states, momenta = momenta))
+  )
 }
 
 #' Sample using hamiltonian MCMC
@@ -213,7 +225,7 @@ hamiltonian_mcmc <- function(initial_state,
         kinetic_energy <- 0.5 * t(momentum) %*% metric_inv %*% momentum
         current_energy <- potential_energy + kinetic_energy
         proposed_energy <- NA
-        acceptance_ratio <- 0
+        acceptance_ratio <- NA
       } else {
         potential_energy <- -as.numeric(fit$log_prob(current_state))
         kinetic_energy <- 0.5 * t(momentum) %*% metric_inv %*% momentum
@@ -232,24 +244,20 @@ hamiltonian_mcmc <- function(initial_state,
         }
       }
 
-      #eigval_q <- adapter$get_eigvals()/sum(adapter$get_eigvals())
-      #cat(eigval_q[which.min(sapply(eigval_q, function(q) {
-      #  sum(diag(adapter$metric_adapter$sample_covariance(tau=q) %*% adapter$metric_adapter$metric(tau=q))) - log(prod(adapter$metric_adapter$get_reg_eigvals(tau=q)))
-      #}))])
-      #cat('\r\n')
-
-      ll_sigma = sum(diag(adapter$sample_covariance() %*% adapter$metric())) - log(prod(adapter$get_reg_eigvals()))
-      cat('ll_sigma: ')
-      cat(ll_sigma)
+      sjd <- acceptance_ratio * sum((proposed_state - current_state)^2)
+      cat('SJD: ')
+      cat(sjd)
       cat('\r\n')
-      adapter$adapt_step(acceptance_ratio, ll_sigma)
-      cat(adapter$get_epsilon())
+
+      adapter$adapt_step(acceptance_ratio)
+
+      cat(paste0('Epsilon: ', adapter$get_epsilon()))
       cat('\r\n')
 
       U <- stats::runif(1)
 
       if (!is.na(proposed_energy) && !is.na(acceptance_ratio) && U < acceptance_ratio) {
-        adapter$add_sample(proposed_state)
+        adapter$add_sample(proposed_state, sqrt(sjd))
         cat('Tau: ')
         cat(adapter$get_tau())
         cat('\r\n')
@@ -288,7 +296,7 @@ hamiltonian_mcmc <- function(initial_state,
     step_sizes[i] = adapter$get_epsilon()
 
     if (metric_method %in% c('ccipca', 'incpca')) {
-      tau_hist[i, ] <- c(adapter$get_tau(), adapter$get_tau_2())
+      tau_hist[i, ] <- c(adapter$get_tau(), adapter$get_tau())
       eg_val[i,] <- adapter$get_eigvals()
       eg_vec[[i]] <- adapter$get_eigvecs()
     }

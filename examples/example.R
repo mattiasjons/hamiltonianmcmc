@@ -9,14 +9,14 @@ color_scheme_set("brightblue")
 
 
 eg_fn <- function() rexp(1)
-df <- generate_eig_df(501, 0.9, 25, eg_fn)
+df <- generate_eig_df(301, 0.9, 25, eg_fn)
 X <- df[[1]]
 y <- df[[2]]
 
 file <- file.path("./examples/mvnormal.stan")
 
 
-k = 500
+k = 300
 data_list <- list(N = nrow(X),
                   p = k,
                   y = y,
@@ -24,46 +24,58 @@ data_list <- list(N = nrow(X),
 
 library(glmnet) #Let's "cheat" to find good starting values.
 
-hmc_res <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 0.01)))[-1],
-                            num_samples = 500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),
+#RegularizationAdapter$debug('adapt_step')
+#RegularizationAdapter$undebug('adapt_step')
+
+hmc_res <- hamiltonian_mcmc(c(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 0.01)))[-1], 1),
+                            num_samples = 2000, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k+1),
                             metric_method = 'ccipca', metric_adapter_settings = list(k=50, reg_method='minmax'))
 
-hmc_res_inc <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 0.01)))[-1],
-                            num_samples = 500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),
-                            metric_method = 'incpca', metric_adapter_settings = list(k=130, reg_method='minmax'))
+hmc_res_inc <- hamiltonian_mcmc(c(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 0.01)))[-1], 1),
+                            num_samples = 2000, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k+1),
+                            metric_method = 'incpca', metric_adapter_settings = list(k=50, reg_method='minmax'))
 
-hmc_res_cov <- hamiltonian_mcmc(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 0.01)))[-1],
-                            500, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k),
+hmc_res_cov <- hamiltonian_mcmc(c(as.numeric(coef.glmnet(glmnet(data_list$X, y, intercept = F, lambda = 0.01)))[-1], 1),
+                            2000, 0.1, 20, stan_file = file, stan_data = data_list, metric = diag(k+1),
                             metric_method = 'welford')
 
-mcmc_intervals(hmc_res$samples[300:500,])
-mcmc_intervals(hmc_res_inc$samples[300:500,])
-mcmc_intervals(hmc_res_cov$samples[300:500,])
+mcmc_intervals(hmc_res$samples[500:1000,])
+mcmc_intervals(hmc_res_inc$samples[500:1000,])
+mcmc_intervals(hmc_res_cov$samples[500:1000,])
 
-mcmc_trace(hmc_res$samples[300:500,1:30])
-mcmc_trace(hmc_res_inc$samples[300:500,1:30])
+mcmc_trace(hmc_res$samples[1000:2000,1:30])
+acf(hmc_res$samples[1000:2000,115])
+
+mcmc_trace(hmc_res_inc$samples[1000:2000,1:30])
+acf(hmc_res_inc$samples[1000:2000,115])
+
 mcmc_trace(hmc_res_cov$samples[300:500,1:30])
+acf(hmc_res_cov$samples[1000:2000,115])
+#acf(hmc_res_inc$samples[seq(1, 500, by=2),80])
 
-plot(density(hmc_res$samples[400:500, 4]))
-lines(density(hmc_res_cov$samples[400:500, 4]))
-lines(density(hmc_res_inc$samples[400:500, 4]))
+hist(rowSums(diff(hmc_res_inc$samples)^2))
+hist(rowSums(diff(hmc_res_inc$samples[seq(2, 500, by=2),])^2))
+mcmc_trace(hmc_res_cov$samples[1000:2000,1:30])
 
 hmc_lst <- list(Spectral=hmc_res, Spectral_Incremental=hmc_res_inc, Welford=hmc_res_cov)
 plot_step_size(hmc_lst)
+plot_posterior_draws(hmc_lst, 1000)
 
 plot_eigenvalues_minmax_shrink(hmc_res, T)
 plot_eigenvalues_minmax_shrink(hmc_res_inc, T)
 
 plot_tau(hmc_res)
-plot(hmc_res$tau[,1])
+plot_tau(hmc_res_inc)
 
-plot_leapfrog_steps(hmc_res_cov)
 plot_leapfrog_steps(hmc_res)
 plot_leapfrog_steps(hmc_res_inc)
+plot_leapfrog_steps(hmc_res_cov)
 
 mean(hmc_res$ess)
 mean(hmc_res_cov$ess)
 mean(hmc_res_inc$ess)
+
+plot(hmc_res$tau[-1,1], sqrt(get_esjd(hmc_res)[,2]))
 
 plot_ess_var(hmc_lst)
 plot_ess(hmc_lst)
@@ -71,10 +83,33 @@ plot_esjd(hmc_lst)
 
 plot_trace(hmc_lst)
 
-plot(get_condition_number(hmc_res, T))
-plot(get_condition_number(hmc_res_inc, T))
+plot(get_esjd(hmc_res), ylim=c(0, 1000))
+esjd_ts <- lowess(get_esjd(hmc_res)[,2], f = 0.05)
+lines(esjd_ts$y, col='red', lwd=3)
+
+#plot(get_condition_number(hmc_res, T))
+#plot(get_condition_number(hmc_res_inc, T))
 plot_esjd_potential(hmc_res)
 plot_esjd_trace(hmc_lst)
+
+esjd_ts_cov <- lowess(get_esjd(hmc_res_cov)[,2], f = 0.05)
+lines(esjd_ts_cov$y, col='red', lwd=3)
+
+eff_smp <- zoo::rollapply(hmc_res$samples, 50, coda::effectiveSize, by=10)
+eff_smp_inc <- zoo::rollapply(hmc_res_inc$samples, 50, coda::effectiveSize, by=10)
+eff_smp_cov <- zoo::rollapply(hmc_res_cov$samples, 50, coda::effectiveSize, by=10)
+
+df1 <- data.frame(e=rowMeans(eff_smp), t=approx(hmc_res$ess_s[,1], n = 196)$y, Method='Spectral')
+df2 <- data.frame(e=rowMeans(eff_smp_cov), t=approx(hmc_res_cov$ess_s[,1], n = 196)$y, Method='Welford')
+df3 <- data.frame(e=rowMeans(eff_smp_inc), t=approx(hmc_res_inc$ess_s[,1], n = 196)$y, Method='Spectral Incremental')
+df1$t <- df1$t-min(df1$t)
+df2$t <- df2$t-min(df2$t)
+df3$t <- df3$t-min(df3$t)
+
+df_plot <- rbind(df1, df2, df3)
+ggplot(data=df_plot, mapping = aes(x=t, y=e, col=Method, group=Method)) +
+  geom_line() + geom_smooth() + labs(x='Time (s)', y='Effective Sample Size, rolling estimate (n=30)')
+
 
 
 

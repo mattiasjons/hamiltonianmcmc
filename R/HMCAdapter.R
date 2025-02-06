@@ -12,6 +12,7 @@ HMCAdapter <- R6Class("HMCAdapter",
                             tmp_samples = NULL,
                             step_size = NULL,
                             reg_method = NULL,
+                            reg_adapter = NULL,
 
                             # Initialization method
                             initialize = function(metric_method='welford', reg_method = 'none',
@@ -19,7 +20,7 @@ HMCAdapter <- R6Class("HMCAdapter",
 
                               # Initialize the Dual Averaging Adapter
                               self$step_size = step_size
-                              self$dual_adapter = DualAveragingAdaptation$new(0.65, step_size, 0.99)
+                              self$dual_adapter = DualAveragingAdaptation$new(0.65, step_size)
 
                               self$metric_adapter <- DummyAdapter$new(metric)
                               self$count <- 0
@@ -27,14 +28,15 @@ HMCAdapter <- R6Class("HMCAdapter",
 
                               self$metric_settings = metric_settings
                               self$reg_method = reg_method
+                              self$reg_adapter = RegularizationAdapter$new(0.99, 20, 3000)
                             },
 
-                            adapt_step = function(acceptance_prob, ll) {
+                            adapt_step = function(acceptance_prob) {
                               self$dual_adapter$adapt_step(acceptance_prob)
                             },
 
                             # Method to update the statistics with a new multidimensional value
-                            add_sample = function(new_value) {
+                            add_sample = function(new_value, sjd=NULL) {
 
                               if(!self$metric_method =='welford') {
 
@@ -71,6 +73,11 @@ HMCAdapter <- R6Class("HMCAdapter",
 
                                   self$metric_adapter$add_sample(new_value)
 
+                                  #Note: adapting squared jumping distance, DA
+                                  self$reg_adapter$adapt_step_sjd(sjd)
+
+                                  #Note: adapting using log likelihood
+                                  #self$reg_adapter$adapt_step(self$get_eigvals(), self$get_eigvecs())
                                 }
                               } else {
 
@@ -86,7 +93,6 @@ HMCAdapter <- R6Class("HMCAdapter",
                                 } else if (self$count > 2) {
 
                                   self$metric_adapter$add_sample(new_value)
-
                                 }
                               }
 
@@ -95,7 +101,7 @@ HMCAdapter <- R6Class("HMCAdapter",
 
                             sample_covariance = function() {
                               if(self$metric_method %in% c('ccipca', 'incpca') && self$count>self$metric_settings$k) {
-                                return(self$metric_adapter$sample_covariance(tau = self$dual_adapter$get_tau())) #TODO: Fix Tau ref
+                                return(self$metric_adapter$sample_covariance(tau = self$reg_adapter$get_tau()))
                               } else {
                                 return(self$metric_adapter$sample_covariance())
                               }
@@ -103,7 +109,7 @@ HMCAdapter <- R6Class("HMCAdapter",
 
                             metric = function() {
                               if(self$metric_method %in% c('ccipca', 'incpca') && self$count>self$metric_settings$k) {
-                                return(self$metric_adapter$metric(tau = self$dual_adapter$get_tau()))  #TODO: Fix Tau ref
+                                return(self$metric_adapter$metric(tau = self$reg_adapter$get_tau()))
                               } else {
                                 return(self$metric_adapter$metric())
                               }
@@ -113,18 +119,22 @@ HMCAdapter <- R6Class("HMCAdapter",
                               if(self$metric_method %in% c('ccipca', 'incpca') && self$count>self$metric_settings$k) {
                                 return(self$metric_adapter$get_eigvals())
                               } else {
+                                cat('returned NA eigenvalues')
+                                cat('\r\n')
                                 return(rep(NA, self$metric_settings$k))
                               }
                             },
 
                             get_reg_eigvals = function() {
-                              return(self$metric_adapter$get_reg_eigvals(tau = self$dual_adapter$get_tau()))  #TODO: Fix Tau ref
+                              return(self$metric_adapter$get_reg_eigvals(tau = self$reg_adapter$get_tau()))
                             },
 
                             get_eigvecs = function() {
                               if(self$metric_method %in% c('ccipca', 'incpca') && self$count>self$metric_settings$k) {
                                 return(self$metric_adapter$get_eigvecs())
                               } else {
+                                cat('returned NA eigenvector')
+                                cat('\r\n')
                                 return(NA)
                               }
                             },
@@ -134,11 +144,7 @@ HMCAdapter <- R6Class("HMCAdapter",
                             },
 
                             get_tau = function() {
-                              return(self$dual_adapter$get_tau())  #TODO: Fix Tau ref
-                            },
-
-                            get_tau_2 = function() {
-                              return(self$dual_adapter$get_tau_2())  #TODO: Fix Tau ref
+                              return(self$reg_adapter$get_tau())
                             }
                           )
 )

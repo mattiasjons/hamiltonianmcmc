@@ -472,3 +472,19 @@ regularize_eigvals <- function(eig_vals, tau_min, tau_max, reg_method='minmax') 
     return(NA)
   }
 }
+
+#' Get regularized eigenvalues
+#' Note: Currently the regularized method only supports the 'minmax' regularization method.
+#'
+#' @param hmc_lst A named list of hmc result objects.
+#' @param nsamples The function will plot the posterior for the last 'nsamples' samples.
+#' @param i Specifies the variable index for which to generate the plot. Default: Randomly sampled from the available variables.
+#' @export
+plot_posterior_draws <- function(hmc_lst, nsamples=250,
+                                 i=sample(ncol(hmc_lst$Spectral$samples), 1)) {
+  tmp <- do.call(cbind,
+                 lapply(hmc_lst, function(hmc_res) hmc_res$samples[(nrow(hmc_res$samples)-nsamples):nrow(hmc_res$samples),i]))
+  colnames(tmp) <- c('Spectral', 'Spectral Incremental', 'Welford')
+  bayesplot::mcmc_areas(posterior::as_draws_array(tmp)) +
+    ggtitle(paste0('Posterior distribution of draws for Variable ', i))
+}
